@@ -49,6 +49,7 @@ import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
 import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import type { PermissionResult } from "../permissions/index.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -459,6 +460,22 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	 * If omitted, the default execution mode applies.
 	 */
 	executionMode?: ToolExecutionMode;
+
+	/** When true, the tool only reads state. The permission resolver auto-allows it and permits it in plan mode. */
+	isReadOnly?: boolean;
+
+	/**
+	 * Dynamically classify a specific call as read-only from its arguments
+	 * (e.g. bash inspecting the command). Takes precedence over `isReadOnly`.
+	 * Method syntax (bivariant params) so concretely-typed tools stay assignable to ToolDefinition<any>.
+	 */
+	classifyReadOnly?(args: Static<TParams>): boolean;
+
+	/**
+	 * Optional per-tool permission opinion consulted by the permission resolver
+	 * before the rule set. Return `{ behavior: "passthrough" }` to defer to rules/mode.
+	 */
+	checkPermissions?(args: Static<TParams>, ctx: ExtensionContext): PermissionResult | Promise<PermissionResult>;
 
 	/** Execute the tool. */
 	execute(
