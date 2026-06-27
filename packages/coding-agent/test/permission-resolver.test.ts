@@ -41,6 +41,8 @@ describe("matchContent / ruleMatches / getPermissionSubject", () => {
 		expect(matchContent("git status", "git push")).toBe(false);
 		expect(matchContent("npm run test:*", "npm run test:unit")).toBe(true);
 		expect(matchContent("npm run test:*", "npm run build")).toBe(false);
+		expect(matchContent("npm run test:*", "npm run testfoo")).toBe(false);
+		expect(matchContent("git status:*", "git status --short")).toBe(true);
 		expect(matchContent("*.env", "config.env")).toBe(true);
 		expect(matchContent("*.env", "config.txt")).toBe(false);
 	});
@@ -111,6 +113,33 @@ describe("evaluatePermission", () => {
 			"allow",
 		);
 		expect(evaluatePermission(evalInput({ toolName: "edit", mode: "plan" })).behavior).toBe("deny");
+	});
+
+	it("plan mode denies a mutating tool even with an allow rule", () => {
+		expect(
+			evaluatePermission(evalInput({ toolName: "edit", mode: "plan", rules: flattenRules({ allow: ["edit"] }) }))
+				.behavior,
+		).toBe("deny");
+	});
+
+	it("dontAsk still allows read-only and allow-ruled calls", () => {
+		expect(evaluatePermission(evalInput({ toolName: "read", mode: "dontAsk", isReadOnly: true })).behavior).toBe(
+			"allow",
+		);
+		expect(
+			evaluatePermission(
+				evalInput({
+					toolName: "bash",
+					mode: "dontAsk",
+					input: { command: "ls" },
+					rules: flattenRules({ allow: ["bash(ls)"] }),
+				}),
+			).behavior,
+		).toBe("allow");
+	});
+
+	it("asks for an unknown custom tool with no read-only metadata", () => {
+		expect(evaluatePermission(evalInput({ toolName: "some_custom_tool", input: {} })).behavior).toBe("ask");
 	});
 
 	it("acceptEdits auto-allows edit/write but still asks for bash", () => {
