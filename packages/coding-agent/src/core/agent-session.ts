@@ -480,8 +480,8 @@ export class AgentSession {
 	/**
 	 * Resolve a built-in permission decision for a tool call (S1 safety layer).
 	 *
-	 * Always enforces deny rules and plan mode. An un-ruled "ask" is surfaced via
-	 * the extension UI when available; with no UI it resolves per the
+	 * Always enforces deny rules and plan mode. An un-ruled "ask" prompts only in
+	 * the interactive TUI; in RPC/print/json it resolves per the
 	 * `nonInteractivePermission` setting (default "allow", preserving existing
 	 * non-interactive behavior). Choosing "Allow always" persists an allow rule.
 	 */
@@ -489,10 +489,9 @@ export class AgentSession {
 		const mode = this.settingsManager.getPermissionMode();
 		const rules = flattenRules(this.settingsManager.getPermissionRules());
 		const definition = this.getToolDefinition(toolName);
-		const isReadOnly =
-			definition?.isReadOnly ??
-			definition?.classifyReadOnly?.(input as never) ??
-			BUILTIN_READ_ONLY_TOOLS.has(toolName);
+		const isReadOnly = definition?.classifyReadOnly
+			? definition.classifyReadOnly(input as never)
+			: (definition?.isReadOnly ?? BUILTIN_READ_ONLY_TOOLS.has(toolName));
 
 		let toolCheck: PermissionResult | undefined;
 		if (definition?.checkPermissions) {
@@ -511,10 +510,13 @@ export class AgentSession {
 			return decision;
 		}
 
+		// Only the interactive TUI can surface an approval prompt. RPC/print/json
+		// resolve an "ask" via the configured non-interactive default instead of
+		// blocking on a dialog the client may never answer.
 		const ctx = this._extensionRunner.createContext();
-		if (!ctx.hasUI) {
+		if (ctx.mode !== "tui" || !ctx.hasUI) {
 			return this.settingsManager.getNonInteractivePermission() === "deny"
-				? { behavior: "deny", message: `${decision.message} (no interactive UI available; denied)` }
+				? { behavior: "deny", message: `${decision.message} (no interactive prompt available; denied)` }
 				: { behavior: "allow" };
 		}
 

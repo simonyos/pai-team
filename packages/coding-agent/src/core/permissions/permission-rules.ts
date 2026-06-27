@@ -40,7 +40,9 @@ export function getPermissionSubject(toolName: string, input: Record<string, unk
 export function matchContent(pattern: string, subject: string): boolean {
 	if (pattern.endsWith(":*")) {
 		const prefix = pattern.slice(0, -2);
-		return subject === prefix || subject.startsWith(prefix);
+		// Match the bare prefix or a ":" / " "-delimited extension, not a longer word
+		// (so "git status:*" matches "git status --short" but not "git statusfoo").
+		return subject === prefix || subject.startsWith(`${prefix}:`) || subject.startsWith(`${prefix} `);
 	}
 	if (pattern.includes("*")) {
 		const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
