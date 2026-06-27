@@ -75,4 +75,20 @@ export {
 	type TurnStartEvent,
 	type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
+// Permission system (Wave 1 safety foundation)
+export {
+	BUILTIN_READ_ONLY_TOOLS,
+	EDIT_TOOLS,
+	evaluatePermission,
+	flattenRules,
+	formatPermissionRule,
+	type PermissionBehavior,
+	type PermissionEvalInput,
+	type PermissionMode,
+	type PermissionResult,
+	type PermissionRule,
+	type PermissionRuleValue,
+	parsePermissionRule,
+	ruleMatches,
+} from "./permissions/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";

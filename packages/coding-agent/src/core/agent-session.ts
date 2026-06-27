@@ -83,6 +83,13 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import {
+	BUILTIN_READ_ONLY_TOOLS,
+	evaluatePermission,
+	flattenRules,
+	formatPermissionRule,
+	type PermissionResult,
+} from "./permissions/index.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
@@ -414,6 +421,14 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+			const input = args as Record<string, unknown>;
+
+			// Built-in permission resolution runs before extension tool_call handlers.
+			const decision = await this._resolveToolPermission(toolCall.name, input);
+			if (decision.behavior === "deny") {
+				return { block: true, reason: decision.message };
+			}
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -424,7 +439,7 @@ export class AgentSession {
 					type: "tool_call",
 					toolName: toolCall.name,
 					toolCallId: toolCall.id,
-					input: args as Record<string, unknown>,
+					input,
 				});
 			} catch (err) {
 				if (err instanceof Error) {
@@ -460,6 +475,63 @@ export class AgentSession {
 				isError: hookResult.isError ?? isError,
 			};
 		};
+	}
+
+	/**
+	 * Resolve a built-in permission decision for a tool call (S1 safety layer).
+	 *
+	 * Always enforces deny rules and plan mode. An un-ruled "ask" is surfaced via
+	 * the extension UI when available; with no UI it resolves per the
+	 * `nonInteractivePermission` setting (default "allow", preserving existing
+	 * non-interactive behavior). Choosing "Allow always" persists an allow rule.
+	 */
+	private async _resolveToolPermission(toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
+		const mode = this.settingsManager.getPermissionMode();
+		const rules = flattenRules(this.settingsManager.getPermissionRules());
+		const definition = this.getToolDefinition(toolName);
+		const isReadOnly =
+			definition?.isReadOnly ??
+			definition?.classifyReadOnly?.(input as never) ??
+			BUILTIN_READ_ONLY_TOOLS.has(toolName);
+
+		let toolCheck: PermissionResult | undefined;
+		if (definition?.checkPermissions) {
+			try {
+				toolCheck = await definition.checkPermissions(input as never, this._extensionRunner.createContext());
+			} catch (err) {
+				toolCheck = {
+					behavior: "deny",
+					message: `Permission check failed for ${toolName}: ${err instanceof Error ? err.message : String(err)}`,
+				};
+			}
+		}
+
+		const decision = evaluatePermission({ toolName, input, mode, rules, isReadOnly, toolCheck });
+		if (decision.behavior !== "ask") {
+			return decision;
+		}
+
+		const ctx = this._extensionRunner.createContext();
+		if (!ctx.hasUI) {
+			return this.settingsManager.getNonInteractivePermission() === "deny"
+				? { behavior: "deny", message: `${decision.message} (no interactive UI available; denied)` }
+				: { behavior: "allow" };
+		}
+
+		const allowOnce = "Allow once";
+		const allowAlways = "Allow always";
+		const denyChoice = "Deny";
+		const choice = await ctx.ui.select(decision.message, [allowOnce, allowAlways, denyChoice]);
+		if (choice === allowAlways) {
+			if (decision.suggestion) {
+				this.settingsManager.addPermissionRule("allow", formatPermissionRule(decision.suggestion));
+			}
+			return { behavior: "allow" };
+		}
+		if (choice === allowOnce) {
+			return { behavior: "allow" };
+		}
+		return { behavior: "deny", message: "Denied by user." };
 	}
 
 	// =========================================================================

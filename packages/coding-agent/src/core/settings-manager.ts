@@ -6,6 +6,7 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
+import { PERMISSION_MODES, type PermissionMode } from "./permissions/index.ts";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -60,6 +61,13 @@ export interface WarningSettings {
 
 export type DefaultProjectTrust = "ask" | "always" | "never";
 
+/** Permission rule strings, each "Tool" (tool-wide) or "Tool(content)" (scoped). */
+export interface PermissionRulesSetting {
+	allow?: string[];
+	ask?: string[];
+	deny?: string[];
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -93,6 +101,9 @@ export interface Settings {
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
 	defaultProjectTrust?: DefaultProjectTrust; // default: "ask"; global setting only
+	permissionMode?: PermissionMode; // default: "default"; how tool calls are gated (default/plan/acceptEdits/bypassPermissions/dontAsk)
+	permissionRules?: PermissionRulesSetting; // allow/ask/deny rule strings ("Tool" or "Tool(content)")
+	nonInteractivePermission?: "allow" | "deny"; // default: "allow"; how an un-ruled "ask" resolves when no UI is available
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
@@ -875,6 +886,47 @@ export class SettingsManager {
 	setDefaultProjectTrust(defaultProjectTrust: DefaultProjectTrust): void {
 		this.globalSettings.defaultProjectTrust = defaultProjectTrust;
 		this.markModified("defaultProjectTrust");
+		this.save();
+	}
+
+	getPermissionMode(): PermissionMode {
+		const value = this.settings.permissionMode;
+		return value && PERMISSION_MODES.includes(value) ? value : "default";
+	}
+
+	setPermissionMode(mode: PermissionMode): void {
+		this.globalSettings.permissionMode = mode;
+		this.markModified("permissionMode");
+		this.save();
+	}
+
+	getPermissionRules(): { allow: string[]; ask: string[]; deny: string[] } {
+		const rules = this.settings.permissionRules ?? {};
+		return {
+			allow: [...(rules.allow ?? [])],
+			ask: [...(rules.ask ?? [])],
+			deny: [...(rules.deny ?? [])],
+		};
+	}
+
+	addPermissionRule(behavior: "allow" | "ask" | "deny", rule: string): void {
+		const current = this.globalSettings.permissionRules ?? {};
+		const existing = current[behavior] ?? [];
+		if (existing.includes(rule)) {
+			return;
+		}
+		this.globalSettings.permissionRules = { ...current, [behavior]: [...existing, rule] };
+		this.markModified("permissionRules");
+		this.save();
+	}
+
+	getNonInteractivePermission(): "allow" | "deny" {
+		return this.settings.nonInteractivePermission === "deny" ? "deny" : "allow";
+	}
+
+	setNonInteractivePermission(behavior: "allow" | "deny"): void {
+		this.globalSettings.nonInteractivePermission = behavior;
+		this.markModified("nonInteractivePermission");
 		this.save();
 	}
 
