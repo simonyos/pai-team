@@ -440,6 +440,7 @@ describe("AgentSession concurrent prompt guard", () => {
 				emit: (event: { type: string; message?: { role?: string } }) => Promise<void>;
 				emitMessageEnd: (event: { type: string; message?: { role?: string } }) => Promise<undefined>;
 				emitToolCall: (event: { type: string; toolCallId: string }) => Promise<undefined>;
+				createContext: () => { mode: string; hasUI: boolean };
 				emitInput: (
 					text: string,
 					images: unknown,
@@ -457,6 +458,8 @@ describe("AgentSession concurrent prompt guard", () => {
 		};
 		sessionWithRunner._extensionRunner = {
 			hasHandlers: (eventType) => eventType === "tool_call",
+			// Permission resolver calls createContext() on the "ask" path; non-TUI -> non-interactive default (allow).
+			createContext: () => ({ mode: "rpc", hasUI: false }),
 			emit: async () => {},
 			emitMessageEnd: async () => undefined,
 			emitToolCall: async () => {
