@@ -63,6 +63,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	fsPolicy?: CreateAgentSessionOptions["fsPolicy"];
+	sandboxBackend?: CreateAgentSessionOptions["sandboxBackend"];
 }
 
 /**
@@ -202,6 +204,8 @@ export async function createAgentSessionFromServices(
 		excludeTools: options.excludeTools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		fsPolicy: options.fsPolicy,
+		sandboxBackend: options.sandboxBackend,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

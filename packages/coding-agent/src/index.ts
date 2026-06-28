@@ -180,12 +180,15 @@ export {
 	type ConvertSandboxConfigOptions,
 	convertToSandboxRuntimeConfig,
 	createSandboxedBashOperations,
+	createSandboxRuntimeBackend,
 	DEFAULT_DEV_NETWORK,
 	isSandboxSupported,
 	NO_NETWORK,
 	type SandboxBackend,
 	type SandboxFilesystemConfig,
 	type SandboxNetworkConfig,
+	type SandboxRuntimeBackend,
+	type SandboxRuntimeBackendOptions,
 	type SandboxRuntimeConfig,
 } from "./core/sandbox/index.ts";
 // SDK for programmatic usage

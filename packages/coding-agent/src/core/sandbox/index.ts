@@ -17,3 +17,8 @@ export {
 	type SandboxNetworkConfig,
 	type SandboxRuntimeConfig,
 } from "./sandbox-adapter.ts";
+export {
+	createSandboxRuntimeBackend,
+	type SandboxRuntimeBackend,
+	type SandboxRuntimeBackendOptions,
+} from "./sandbox-runtime-backend.ts";
