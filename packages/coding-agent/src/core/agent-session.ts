@@ -99,6 +99,7 @@ import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
+import type { FsPolicy } from "./tools/fs-policy.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 
@@ -193,6 +194,13 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/**
+	 * Filesystem scoping policy (slice S3). When set, the read/write/edit/grep tools
+	 * confine writes to the policy's roots and block reads/writes of protected paths.
+	 * Omitted = no scoping. Note: `bash` is governed by command-safety (S2) / the OS
+	 * sandbox (S4), not by this policy.
+	 */
+	fsPolicy?: FsPolicy;
 }
 
 export interface ExtensionBindings {
@@ -317,6 +325,7 @@ export class AgentSession {
 	private _allowedToolNames?: Set<string>;
 	private _excludedToolNames?: Set<string>;
 	private _baseToolsOverride?: Record<string, AgentTool>;
+	private _fsPolicy?: FsPolicy;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionMode: ExtensionMode = "print";
@@ -347,6 +356,7 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
+		this._fsPolicy = config.fsPolicy;
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
@@ -2492,6 +2502,7 @@ export class AgentSession {
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					fsPolicy: this._fsPolicy,
 				});
 
 		this._baseToolDefinitions = new Map(

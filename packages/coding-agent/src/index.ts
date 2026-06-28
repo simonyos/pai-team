@@ -249,6 +249,8 @@ export { createSyntheticSourceInfo } from "./core/source-info.ts";
 export { type EditDiffResult, generateDiffString, generateUnifiedPatch } from "./core/tools/edit-diff.ts";
 // Tools
 export {
+	assertReadable,
+	assertWritable,
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
@@ -256,6 +258,7 @@ export {
 	type BashToolInput,
 	type BashToolOptions,
 	createBashToolDefinition,
+	createDefaultFsPolicy,
 	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
@@ -273,11 +276,15 @@ export {
 	type FindToolDetails,
 	type FindToolInput,
 	type FindToolOptions,
+	type FsPolicy,
+	FsPolicyError,
 	formatSize,
 	type GrepOperations,
 	type GrepToolDetails,
 	type GrepToolInput,
 	type GrepToolOptions,
+	isInside,
+	isReadDenied,
 	type LsOperations,
 	type LsToolDetails,
 	type LsToolInput,

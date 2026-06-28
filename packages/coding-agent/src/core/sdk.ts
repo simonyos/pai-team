@@ -27,6 +27,7 @@ import {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
+	type FsPolicy,
 	type ToolName,
 	withFileMutationQueue,
 } from "./tools/index.ts";
@@ -69,6 +70,14 @@ export interface CreateAgentSessionOptions {
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+
+	/**
+	 * Filesystem scoping policy (slice S3). When set, the read/write/edit/grep tools
+	 * confine writes to the policy's roots and block reads/writes of protected paths
+	 * (e.g. via `createDefaultFsPolicy(cwd)`). Omitted = no scoping. `bash` is governed
+	 * by command-safety / the OS sandbox, not by this policy.
+	 */
+	fsPolicy?: FsPolicy;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -382,6 +391,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		resourceLoader,
 		customTools: options.customTools,
+		fsPolicy: options.fsPolicy,
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,

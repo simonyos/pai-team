@@ -7,6 +7,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts"
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
+import { assertWritable, type FsPolicy } from "./fs-policy.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -37,6 +38,8 @@ const defaultWriteOperations: WriteOperations = {
 export interface WriteToolOptions {
 	/** Custom operations for file writing. Default: local filesystem */
 	operations?: WriteOperations;
+	/** When set, writes are confined to the policy's roots and kept out of protected paths. */
+	fsPolicy?: FsPolicy;
 }
 
 type WriteHighlightCache = {
@@ -183,6 +186,7 @@ export function createWriteToolDefinition(
 	options?: WriteToolOptions,
 ): ToolDefinition<typeof writeSchema, undefined> {
 	const ops = options?.operations ?? defaultWriteOperations;
+	const fsPolicy = options?.fsPolicy;
 	return {
 		name: "write",
 		label: "write",
@@ -199,6 +203,7 @@ export function createWriteToolDefinition(
 			_ctx?,
 		) {
 			const absolutePath = resolveToCwd(path, cwd);
+			if (fsPolicy) assertWritable(absolutePath, fsPolicy);
 			const dir = dirname(absolutePath);
 			return withFileMutationQueue(absolutePath, async () => {
 				// Do not reject from an abort event listener here: that would release the
