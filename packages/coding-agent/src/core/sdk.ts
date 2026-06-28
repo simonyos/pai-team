@@ -14,6 +14,7 @@ import { findInitialModel } from "./model-resolver.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
+import type { SandboxBackend } from "./sandbox/index.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
@@ -78,6 +79,14 @@ export interface CreateAgentSessionOptions {
 	 * by command-safety / the OS sandbox, not by this policy.
 	 */
 	fsPolicy?: FsPolicy;
+
+	/**
+	 * OS sandbox backend (slice S4). When provided and enabled, bash commands run
+	 * under sandbox-exec (macOS) / bubblewrap (Linux). The backend owns the
+	 * `@anthropic-ai/sandbox-runtime` dependency and its initialize/reset lifecycle.
+	 * Omitted = no OS sandbox.
+	 */
+	sandboxBackend?: SandboxBackend;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -392,6 +401,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		resourceLoader,
 		customTools: options.customTools,
 		fsPolicy: options.fsPolicy,
+		sandboxBackend: options.sandboxBackend,
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,

@@ -175,6 +175,19 @@ export type {
 export { DefaultPackageManager } from "./core/package-manager.ts";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
+// OS sandbox (S4)
+export {
+	type ConvertSandboxConfigOptions,
+	convertToSandboxRuntimeConfig,
+	createSandboxedBashOperations,
+	DEFAULT_DEV_NETWORK,
+	isSandboxSupported,
+	NO_NETWORK,
+	type SandboxBackend,
+	type SandboxFilesystemConfig,
+	type SandboxNetworkConfig,
+	type SandboxRuntimeConfig,
+} from "./core/sandbox/index.ts";
 // SDK for programmatic usage
 export {
 	AgentSessionRuntime,
