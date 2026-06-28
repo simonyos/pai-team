@@ -27,6 +27,15 @@ export {
 	type FindToolOptions,
 } from "./find.ts";
 export {
+	assertReadable,
+	assertWritable,
+	createDefaultFsPolicy,
+	type FsPolicy,
+	FsPolicyError,
+	isInside,
+	isReadDenied,
+} from "./fs-policy.ts";
+export {
 	createGrepTool,
 	createGrepToolDefinition,
 	type GrepOperations,
@@ -73,6 +82,7 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
+import type { FsPolicy } from "./fs-policy.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
@@ -91,106 +101,132 @@ export interface ToolsOptions {
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
+	/**
+	 * Filesystem scoping policy applied to the read/write/edit/grep tools (slice S3).
+	 * A per-tool `fsPolicy` overrides this. Omitted = no scoping (current behavior).
+	 */
+	fsPolicy?: FsPolicy;
+}
+
+/** Thread a top-level {@link ToolsOptions.fsPolicy} into the read/write/edit tool options. */
+function normalizeToolsOptions(options?: ToolsOptions): ToolsOptions {
+	const fsPolicy = options?.fsPolicy;
+	if (!fsPolicy) return options ?? {};
+	return {
+		...options,
+		read: { ...options?.read, fsPolicy: options?.read?.fsPolicy ?? fsPolicy },
+		write: { ...options?.write, fsPolicy: options?.write?.fsPolicy ?? fsPolicy },
+		edit: { ...options?.edit, fsPolicy: options?.edit?.fsPolicy ?? fsPolicy },
+		grep: { ...options?.grep, fsPolicy: options?.grep?.fsPolicy ?? fsPolicy },
+	};
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
+	const opts = normalizeToolsOptions(options);
 	switch (toolName) {
 		case "read":
-			return createReadToolDefinition(cwd, options?.read);
+			return createReadToolDefinition(cwd, opts.read);
 		case "bash":
-			return createBashToolDefinition(cwd, options?.bash);
+			return createBashToolDefinition(cwd, opts.bash);
 		case "edit":
-			return createEditToolDefinition(cwd, options?.edit);
+			return createEditToolDefinition(cwd, opts.edit);
 		case "write":
-			return createWriteToolDefinition(cwd, options?.write);
+			return createWriteToolDefinition(cwd, opts.write);
 		case "grep":
-			return createGrepToolDefinition(cwd, options?.grep);
+			return createGrepToolDefinition(cwd, opts.grep);
 		case "find":
-			return createFindToolDefinition(cwd, options?.find);
+			return createFindToolDefinition(cwd, opts.find);
 		case "ls":
-			return createLsToolDefinition(cwd, options?.ls);
+			return createLsToolDefinition(cwd, opts.ls);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
 }
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
+	const opts = normalizeToolsOptions(options);
 	switch (toolName) {
 		case "read":
-			return createReadTool(cwd, options?.read);
+			return createReadTool(cwd, opts.read);
 		case "bash":
-			return createBashTool(cwd, options?.bash);
+			return createBashTool(cwd, opts.bash);
 		case "edit":
-			return createEditTool(cwd, options?.edit);
+			return createEditTool(cwd, opts.edit);
 		case "write":
-			return createWriteTool(cwd, options?.write);
+			return createWriteTool(cwd, opts.write);
 		case "grep":
-			return createGrepTool(cwd, options?.grep);
+			return createGrepTool(cwd, opts.grep);
 		case "find":
-			return createFindTool(cwd, options?.find);
+			return createFindTool(cwd, opts.find);
 		case "ls":
-			return createLsTool(cwd, options?.ls);
+			return createLsTool(cwd, opts.ls);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
 }
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
+	const opts = normalizeToolsOptions(options);
 	return [
-		createReadToolDefinition(cwd, options?.read),
-		createBashToolDefinition(cwd, options?.bash),
-		createEditToolDefinition(cwd, options?.edit),
-		createWriteToolDefinition(cwd, options?.write),
+		createReadToolDefinition(cwd, opts.read),
+		createBashToolDefinition(cwd, opts.bash),
+		createEditToolDefinition(cwd, opts.edit),
+		createWriteToolDefinition(cwd, opts.write),
 	];
 }
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
+	const opts = normalizeToolsOptions(options);
 	return [
-		createReadToolDefinition(cwd, options?.read),
-		createGrepToolDefinition(cwd, options?.grep),
-		createFindToolDefinition(cwd, options?.find),
-		createLsToolDefinition(cwd, options?.ls),
+		createReadToolDefinition(cwd, opts.read),
+		createGrepToolDefinition(cwd, opts.grep),
+		createFindToolDefinition(cwd, opts.find),
+		createLsToolDefinition(cwd, opts.ls),
 	];
 }
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
+	const opts = normalizeToolsOptions(options);
 	return {
-		read: createReadToolDefinition(cwd, options?.read),
-		bash: createBashToolDefinition(cwd, options?.bash),
-		edit: createEditToolDefinition(cwd, options?.edit),
-		write: createWriteToolDefinition(cwd, options?.write),
-		grep: createGrepToolDefinition(cwd, options?.grep),
-		find: createFindToolDefinition(cwd, options?.find),
-		ls: createLsToolDefinition(cwd, options?.ls),
+		read: createReadToolDefinition(cwd, opts.read),
+		bash: createBashToolDefinition(cwd, opts.bash),
+		edit: createEditToolDefinition(cwd, opts.edit),
+		write: createWriteToolDefinition(cwd, opts.write),
+		grep: createGrepToolDefinition(cwd, opts.grep),
+		find: createFindToolDefinition(cwd, opts.find),
+		ls: createLsToolDefinition(cwd, opts.ls),
 	};
 }
 
 export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
+	const opts = normalizeToolsOptions(options);
 	return [
-		createReadTool(cwd, options?.read),
-		createBashTool(cwd, options?.bash),
-		createEditTool(cwd, options?.edit),
-		createWriteTool(cwd, options?.write),
+		createReadTool(cwd, opts.read),
+		createBashTool(cwd, opts.bash),
+		createEditTool(cwd, opts.edit),
+		createWriteTool(cwd, opts.write),
 	];
 }
 
 export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[] {
+	const opts = normalizeToolsOptions(options);
 	return [
-		createReadTool(cwd, options?.read),
-		createGrepTool(cwd, options?.grep),
-		createFindTool(cwd, options?.find),
-		createLsTool(cwd, options?.ls),
+		createReadTool(cwd, opts.read),
+		createGrepTool(cwd, opts.grep),
+		createFindTool(cwd, opts.find),
+		createLsTool(cwd, opts.ls),
 	];
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
+	const opts = normalizeToolsOptions(options);
 	return {
-		read: createReadTool(cwd, options?.read),
-		bash: createBashTool(cwd, options?.bash),
-		edit: createEditTool(cwd, options?.edit),
-		write: createWriteTool(cwd, options?.write),
-		grep: createGrepTool(cwd, options?.grep),
-		find: createFindTool(cwd, options?.find),
-		ls: createLsTool(cwd, options?.ls),
+		read: createReadTool(cwd, opts.read),
+		bash: createBashTool(cwd, opts.bash),
+		edit: createEditTool(cwd, opts.edit),
+		write: createWriteTool(cwd, opts.write),
+		grep: createGrepTool(cwd, opts.grep),
+		find: createFindTool(cwd, opts.find),
+		ls: createLsTool(cwd, opts.ls),
 	};
 }
