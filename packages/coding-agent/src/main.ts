@@ -31,6 +31,11 @@ import type { ModelRegistry } from "./core/model-registry.ts";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import {
+	convertToSandboxRuntimeConfig,
+	createSandboxRuntimeBackend,
+	DEFAULT_DEV_NETWORK,
+} from "./core/sandbox/index.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
 	formatMissingSessionCwdPrompt,
@@ -41,6 +46,7 @@ import {
 import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
+import { createDefaultFsPolicy } from "./core/tools/fs-policy.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
@@ -698,6 +704,17 @@ export async function main(args: string[], options?: MainOptions) {
 		);
 		diagnostics.push(...sessionOptionDiagnostics);
 
+		// --sandbox: confine the file tools to the workspace (S3 FsPolicy) and run bash
+		// under an OS sandbox (S4). Both derive from the same default policy.
+		if (parsed.sandbox) {
+			const sandboxFsPolicy = createDefaultFsPolicy(cwd);
+			sessionOptions.fsPolicy = sandboxFsPolicy;
+			sessionOptions.sandboxBackend = createSandboxRuntimeBackend(
+				convertToSandboxRuntimeConfig(sandboxFsPolicy, { network: DEFAULT_DEV_NETWORK }),
+				{ onWarning: (message) => diagnostics.push({ type: "warning", message }) },
+			);
+		}
+
 		if (parsed.apiKey) {
 			if (!sessionOptions.model) {
 				diagnostics.push({
@@ -720,6 +737,8 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			fsPolicy: sessionOptions.fsPolicy,
+			sandboxBackend: sessionOptions.sandboxBackend,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
