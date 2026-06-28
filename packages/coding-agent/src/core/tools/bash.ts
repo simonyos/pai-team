@@ -15,7 +15,9 @@ import {
 	trackDetachedChildPid,
 	untrackDetachedChildPid,
 } from "../../utils/shell.ts";
+import { checkBashPermission, classifyBashReadOnly, type ExecPolicy } from "../execpolicy/index.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import type { PermissionResult } from "../permissions/index.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -152,6 +154,13 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/**
+	 * Command-safety policy used to classify commands as read-only / prompt /
+	 * forbidden for the permission resolver. Pass `false` to disable
+	 * command-safety classification entirely (the tool then carries no read-only
+	 * or permission opinion and falls back to the resolver's defaults).
+	 */
+	commandSafety?: ExecPolicy | false;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -278,12 +287,26 @@ export function createBashToolDefinition(
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
+	const commandSafety = options?.commandSafety;
+	const safetyEnabled = commandSafety !== false;
+	// A custom policy is used when provided; otherwise `undefined` lets the
+	// command-safety helpers fall back to their default policy.
+	const safetyPolicy: ExecPolicy | undefined = commandSafety ? commandSafety : undefined;
 	return {
 		name: "bash",
 		label: "bash",
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
+		// Command-safety classification (slice S2): the permission resolver uses
+		// classifyReadOnly for plan-mode gating + read-only auto-allow, and
+		// checkPermissions to block forbidden commands and prompt for mutating ones.
+		classifyReadOnly(args: { command: string }): boolean {
+			return safetyEnabled ? classifyBashReadOnly(args.command, safetyPolicy) : false;
+		},
+		checkPermissions(args: { command: string }): PermissionResult {
+			return safetyEnabled ? checkBashPermission(args.command, safetyPolicy) : { behavior: "passthrough" };
+		},
 		async execute(
 			_toolCallId,
 			{ command, timeout }: { command: string; timeout?: number },
