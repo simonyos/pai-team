@@ -1031,6 +1031,7 @@ export class AgentSession {
 			selectedTools: validToolNames,
 			toolSnippets,
 			promptGuidelines,
+			permissionMode: this.settingsManager.getPermissionMode(),
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
 	}

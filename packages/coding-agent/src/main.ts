@@ -632,6 +632,10 @@ export async function main(args: string[], options?: MainOptions) {
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
 		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		if (parsed.plan) {
+			// Runtime-only: start in plan mode for this run without persisting it to settings.
+			runtimeSettingsManager.setRuntimePermissionMode("plan");
+		}
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
