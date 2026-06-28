@@ -92,6 +92,7 @@ import {
 } from "./permissions/index.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
+import { createSandboxedBashOperations, type SandboxBackend } from "./sandbox/index.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
@@ -201,6 +202,13 @@ export interface AgentSessionConfig {
 	 * sandbox (S4), not by this policy.
 	 */
 	fsPolicy?: FsPolicy;
+	/**
+	 * OS sandbox backend (slice S4). When provided and enabled, bash commands (the
+	 * LLM `bash` tool and the `!` path) are wrapped to run under sandbox-exec/bwrap.
+	 * Omitted = no OS sandbox. The backend owns the sandbox-runtime dependency and
+	 * its initialize/reset lifecycle.
+	 */
+	sandboxBackend?: SandboxBackend;
 }
 
 export interface ExtensionBindings {
@@ -326,6 +334,7 @@ export class AgentSession {
 	private _excludedToolNames?: Set<string>;
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _fsPolicy?: FsPolicy;
+	private _sandboxBackend?: SandboxBackend;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionMode: ExtensionMode = "print";
@@ -357,6 +366,7 @@ export class AgentSession {
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._fsPolicy = config.fsPolicy;
+		this._sandboxBackend = config.sandboxBackend;
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
@@ -2484,6 +2494,16 @@ export class AgentSession {
 		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
 	}
 
+	/**
+	 * Build the bash operations for local execution, wrapped by the OS sandbox when
+	 * a backend is configured. Returns undefined when no backend is set so callers
+	 * keep their existing default (unsandboxed local shell) — non-breaking.
+	 */
+	private _resolveBashOperations(shellPath?: string): BashOperations | undefined {
+		if (!this._sandboxBackend) return undefined;
+		return createSandboxedBashOperations(this._sandboxBackend, createLocalBashOperations({ shellPath }));
+	}
+
 	private _buildRuntime(options: {
 		activeToolNames?: string[];
 		flagValues?: Map<string, boolean | string>;
@@ -2501,7 +2521,11 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						operations: this._resolveBashOperations(shellPath),
+					},
 					fsPolicy: this._fsPolicy,
 				});
 
@@ -2686,7 +2710,7 @@ export class AgentSession {
 			const result = await executeBashWithOperations(
 				resolvedCommand,
 				this.sessionManager.getCwd(),
-				options?.operations ?? createLocalBashOperations({ shellPath }),
+				options?.operations ?? this._resolveBashOperations(shellPath) ?? createLocalBashOperations({ shellPath }),
 				{
 					onChunk,
 					signal: this._bashAbortController.signal,
