@@ -173,6 +173,16 @@ export type {
 	ResolvedResource,
 } from "./core/package-manager.ts";
 export { DefaultPackageManager } from "./core/package-manager.ts";
+// System-prompt sections (S5)
+export {
+	BEHAVIORAL_POLICY_SECTION,
+	PERMISSION_POLICY_SECTION,
+	PLAN_MODE_SECTION,
+	renderSafetySections,
+	SAFETY_SECTIONS,
+	type SystemPromptSection,
+	type SystemPromptSectionContext,
+} from "./core/prompt-sections.ts";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
 // OS sandbox (S4)

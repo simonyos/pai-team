@@ -889,7 +889,11 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/** Runtime-only permission-mode override (e.g. `--plan`); takes precedence and is never persisted. */
+	private _runtimePermissionMode?: PermissionMode;
+
 	getPermissionMode(): PermissionMode {
+		if (this._runtimePermissionMode) return this._runtimePermissionMode;
 		const value = this.settings.permissionMode;
 		return value && PERMISSION_MODES.includes(value) ? value : "default";
 	}
@@ -898,6 +902,11 @@ export class SettingsManager {
 		this.globalSettings.permissionMode = mode;
 		this.markModified("permissionMode");
 		this.save();
+	}
+
+	/** Set a runtime-only permission mode that overrides settings without persisting. Pass undefined to clear. */
+	setRuntimePermissionMode(mode: PermissionMode | undefined): void {
+		this._runtimePermissionMode = mode;
 	}
 
 	getPermissionRules(): { allow: string[]; ask: string[]; deny: string[] } {

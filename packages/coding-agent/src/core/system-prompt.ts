@@ -3,6 +3,8 @@
  */
 
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import type { PermissionMode } from "./permissions/permission-types.ts";
+import { renderSafetySections } from "./prompt-sections.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 export interface BuildSystemPromptOptions {
@@ -22,6 +24,10 @@ export interface BuildSystemPromptOptions {
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
+	/** Active permission mode (S5). Drives the plan-mode / permission-posture sections. */
+	permissionMode?: PermissionMode;
+	/** Include the always-on behavioral policy section (S5). Default: true. */
+	includeBehavioralPolicy?: boolean;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -35,9 +41,18 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		cwd,
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
+		permissionMode,
+		includeBehavioralPolicy,
 	} = options;
 	const resolvedCwd = cwd;
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
+
+	// Safety/behavioral sections (S5). Computed from per-session-stable inputs so they
+	// can sit in the cached prefix; appended before the volatile date/cwd footer.
+	const safetySection = renderSafetySections({
+		permissionMode: permissionMode ?? "default",
+		includeBehavioralPolicy: includeBehavioralPolicy ?? true,
+	});
 
 	const now = new Date();
 	const year = now.getFullYear();
@@ -71,6 +86,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
 		if (customPromptHasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
+		}
+
+		if (safetySection) {
+			prompt += `\n\n${safetySection}`;
 		}
 
 		// Add date and working directory last
@@ -163,6 +182,10 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 	// Append skills section (only if read tool is available)
 	if (hasRead && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
+	}
+
+	if (safetySection) {
+		prompt += `\n\n${safetySection}`;
 	}
 
 	// Add date and working directory last

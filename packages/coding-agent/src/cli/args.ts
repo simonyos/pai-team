@@ -46,6 +46,7 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	sandbox?: boolean;
+	plan?: boolean;
 	verbose?: boolean;
 	projectTrustOverride?: boolean;
 	messages: string[];
@@ -186,6 +187,8 @@ export function parseArgs(args: string[]): Args {
 			result.offline = true;
 		} else if (arg === "--sandbox") {
 			result.sandbox = true;
+		} else if (arg === "--plan") {
+			result.plan = true;
 		} else if (arg.startsWith("@")) {
 			result.fileArgs.push(arg.slice(1)); // Remove @ prefix
 		} else if (arg.startsWith("--")) {
@@ -278,6 +281,7 @@ ${chalk.bold("Options:")}
   --no-approve, -na              Ignore project-local files for this run
   --offline                      Disable startup network operations (same as PI_OFFLINE=1)
   --sandbox                      Confine file tools to the workspace and run bash under an OS sandbox (macOS/Linux)
+  --plan                         Start in plan mode: read-only investigation, present a plan before making changes
   --help, -h                     Show this help
   --version, -v                  Show version number
 
