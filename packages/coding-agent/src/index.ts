@@ -229,6 +229,14 @@ export {
 	createWriteTool,
 	type PromptTemplate,
 } from "./core/sdk.ts";
+// Security hardening (1.6)
+export {
+	containsSecret,
+	isSensitiveEnvVar,
+	redactSecrets,
+	SENSITIVE_ENV_VARS,
+	scrubChildEnv,
+} from "./core/security/index.ts";
 export {
 	type BranchSummaryEntry,
 	buildSessionContext,

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripAnsi } from "../utils/ansi.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";
+import { redactSecrets } from "./security/secret-redaction.ts";
 import type { BashOperations } from "./tools/bash.ts";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.ts";
 
@@ -121,7 +122,7 @@ export async function executeBashWithOperations(
 		const cancelled = options?.signal?.aborted ?? false;
 
 		return {
-			output: truncationResult.truncated ? truncationResult.content : fullOutput,
+			output: redactSecrets(truncationResult.truncated ? truncationResult.content : fullOutput),
 			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
 			cancelled,
 			truncated: truncationResult.truncated,
@@ -139,7 +140,7 @@ export async function executeBashWithOperations(
 				tempFileStream.end();
 			}
 			return {
-				output: truncationResult.truncated ? truncationResult.content : fullOutput,
+				output: redactSecrets(truncationResult.truncated ? truncationResult.content : fullOutput),
 				exitCode: undefined,
 				cancelled: true,
 				truncated: truncationResult.truncated,

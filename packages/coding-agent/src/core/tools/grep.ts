@@ -9,6 +9,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts"
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
+import { redactSecrets } from "../security/secret-redaction.ts";
 import { type FsPolicy, isReadDenied } from "./fs-policy.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.ts";
@@ -339,7 +340,8 @@ export function createGrepToolDefinition(
 							const rawOutput = outputLines.join("\n");
 							// Apply byte truncation. There is no line limit here because the match limit already capped rows.
 							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-							let output = truncation.content;
+							// Redact secrets that appear in matched lines (e.g. `grep -r API_KEY`) before context (1.6).
+							let output = redactSecrets(truncation.content);
 							const details: GrepToolDetails = {};
 							// Build actionable notices for truncation and match limits.
 							const notices: string[] = [];

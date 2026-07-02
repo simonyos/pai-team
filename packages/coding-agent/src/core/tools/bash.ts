@@ -18,6 +18,7 @@ import {
 import { checkBashPermission, classifyBashReadOnly, type ExecPolicy } from "../execpolicy/index.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import type { PermissionResult } from "../permissions/index.ts";
+import { redactSecrets } from "../security/secret-redaction.ts";
 import { OutputAccumulator } from "./output-accumulator.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -328,7 +329,7 @@ export function createBashToolDefinition(
 				lastUpdateAt = Date.now();
 				const snapshot = output.snapshot({ persistIfTruncated: true });
 				onUpdate({
-					content: [{ type: "text", text: snapshot.content || "" }],
+					content: [{ type: "text", text: redactSecrets(snapshot.content || "") }],
 					details: {
 						truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
 						fullOutputPath: snapshot.fullOutputPath,
@@ -380,7 +381,7 @@ export function createBashToolDefinition(
 
 			const formatOutput = (snapshot: Awaited<ReturnType<typeof finishOutput>>, emptyText = "(no output)") => {
 				const truncation = snapshot.truncation;
-				let text = snapshot.content || emptyText;
+				let text = redactSecrets(snapshot.content) || emptyText;
 				let details: BashToolDetails | undefined;
 				if (truncation.truncated) {
 					details = { truncation, fullOutputPath: snapshot.fullOutputPath };
