@@ -65,6 +65,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	customTools?: ToolDefinition[];
 	fsPolicy?: CreateAgentSessionOptions["fsPolicy"];
 	sandboxBackend?: CreateAgentSessionOptions["sandboxBackend"];
+	mcpServers?: CreateAgentSessionOptions["mcpServers"];
+	onMcpWarning?: CreateAgentSessionOptions["onMcpWarning"];
 }
 
 /**
@@ -206,6 +208,8 @@ export async function createAgentSessionFromServices(
 		customTools: options.customTools,
 		fsPolicy: options.fsPolicy,
 		sandboxBackend: options.sandboxBackend,
+		mcpServers: options.mcpServers,
+		onMcpWarning: options.onMcpWarning,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

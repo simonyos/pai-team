@@ -209,6 +209,12 @@ export interface AgentSessionConfig {
 	 * its initialize/reset lifecycle.
 	 */
 	sandboxBackend?: SandboxBackend;
+	/**
+	 * Optional teardown hook invoked by {@link AgentSession.dispose}. Lets a caller tie an
+	 * external resource's lifetime to the session (e.g. closing MCP server connections).
+	 * Errors are swallowed so disposal always completes. Omitted = no-op.
+	 */
+	onDispose?: () => void | Promise<void>;
 }
 
 export interface ExtensionBindings {
@@ -335,6 +341,7 @@ export class AgentSession {
 	private _baseToolsOverride?: Record<string, AgentTool>;
 	private _fsPolicy?: FsPolicy;
 	private _sandboxBackend?: SandboxBackend;
+	private _onDispose?: () => void | Promise<void>;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionMode: ExtensionMode = "print";
@@ -367,6 +374,7 @@ export class AgentSession {
 		this._cwd = config.cwd;
 		this._fsPolicy = config.fsPolicy;
 		this._sandboxBackend = config.sandboxBackend;
+		this._onDispose = config.onDispose;
 		this._modelRegistry = config.modelRegistry;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
@@ -837,6 +845,17 @@ export class AgentSession {
 		this._disconnectFromAgent();
 		this._eventListeners = [];
 		cleanupSessionResources(this.sessionId);
+
+		if (this._onDispose) {
+			const onDispose = this._onDispose;
+			this._onDispose = undefined;
+			try {
+				// May be async (e.g. closing MCP connections); run detached so dispose() stays sync.
+				void Promise.resolve(onDispose()).catch(() => {});
+			} catch {
+				// A throwing dispose hook must not prevent the session from tearing down.
+			}
+		}
 	}
 
 	// =========================================================================
