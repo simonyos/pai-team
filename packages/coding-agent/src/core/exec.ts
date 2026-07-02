@@ -4,6 +4,7 @@
 
 import { spawn } from "node:child_process";
 import { waitForChildProcess } from "../utils/child-process.ts";
+import { getShellEnv } from "../utils/shell.ts";
 
 /**
  * Options for executing shell commands.
@@ -41,6 +42,8 @@ export async function execCommand(
 		const proc = spawn(command, args, {
 			cwd,
 			shell: false,
+			// Withhold the agent's model-provider credentials from spawned children (1.6).
+			env: getShellEnv(),
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 

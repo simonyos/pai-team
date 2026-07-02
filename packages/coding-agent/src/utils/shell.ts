@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { delimiter } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
+import { scrubChildEnv } from "../core/security/env-hardening.ts";
 
 export interface ShellConfig {
 	shell: string;
@@ -127,10 +128,11 @@ export function getShellEnv(): NodeJS.ProcessEnv {
 	const hasBinDir = pathEntries.includes(binDir);
 	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
 
-	return {
+	// Withhold the agent's model-provider credentials from child processes (1.6).
+	return scrubChildEnv({
 		...process.env,
 		[pathKey]: updatedPath,
-	};
+	});
 }
 
 /**
