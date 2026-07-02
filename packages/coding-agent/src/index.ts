@@ -162,6 +162,22 @@ export {
 } from "./core/extensions/index.ts";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+// MCP client (Wave 2.1)
+export {
+	buildMcpToolName,
+	DEFAULT_MCP_CONNECT_TIMEOUT_MS,
+	isHttpServerConfig,
+	isMcpToolName,
+	isStdioServerConfig,
+	McpConnection,
+	type McpConnectionStatus,
+	McpManager,
+	type McpManagerOptions,
+	type McpServerConfig,
+	type McpServers,
+	mcpToolToDefinition,
+	parseMcpToolName,
+} from "./core/mcp/index.ts";
 export { convertToLlm } from "./core/messages.ts";
 export { ModelRegistry } from "./core/model-registry.ts";
 export type {

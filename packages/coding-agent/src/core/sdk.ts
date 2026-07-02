@@ -8,6 +8,7 @@ import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
+import { type McpClientFactory, McpManager, type McpServers } from "./mcp/index.ts";
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
@@ -88,6 +89,18 @@ export interface CreateAgentSessionOptions {
 	 */
 	sandboxBackend?: SandboxBackend;
 
+	/**
+	 * MCP servers to connect (Wave 2.1). Each server's tools are discovered and exposed as
+	 * tools named `mcp__<server>__<tool>`, gated by the permission resolver. Connections are
+	 * fail-soft (a server that fails to connect is skipped with a warning) and are closed
+	 * when the session is disposed. Omitted/empty = no MCP tools.
+	 */
+	mcpServers?: McpServers;
+	/** Invoked with a human-readable message when an MCP server fails to connect or a tool is skipped. */
+	onMcpWarning?: (message: string) => void;
+	/** Override the MCP client transport factory (for tests or custom transports). Defaults to the real SDK. */
+	mcpClientFactory?: McpClientFactory;
+
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
 
@@ -108,6 +121,11 @@ export interface CreateAgentSessionResult {
 	extensionsResult: LoadExtensionsResult;
 	/** Warning if session was restored with a different model than saved */
 	modelFallbackMessage?: string;
+	/**
+	 * MCP manager, when `mcpServers` was configured. Its connections are already tied to
+	 * `session.dispose()`; exposed for diagnostics (per-server status) and manual teardown.
+	 */
+	mcpManager?: McpManager;
 }
 
 // Re-exports
@@ -392,6 +410,23 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
+	// Connect any configured MCP servers and fold their tools into customTools. Fail-soft:
+	// a server that cannot connect is skipped with a warning rather than aborting startup.
+	let mcpManager: McpManager | undefined;
+	let customTools = options.customTools;
+	if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+		mcpManager = new McpManager({
+			servers: options.mcpServers,
+			onWarning: options.onMcpWarning,
+			createClient: options.mcpClientFactory,
+		});
+		await mcpManager.connect();
+		const mcpTools = mcpManager.getToolDefinitions();
+		if (mcpTools.length > 0) {
+			customTools = customTools ? [...customTools, ...mcpTools] : mcpTools;
+		}
+	}
+
 	const session = new AgentSession({
 		agent,
 		sessionManager,
@@ -399,7 +434,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		cwd,
 		scopedModels: options.scopedModels,
 		resourceLoader,
-		customTools: options.customTools,
+		customTools,
 		fsPolicy: options.fsPolicy,
 		sandboxBackend: options.sandboxBackend,
 		modelRegistry,
@@ -408,6 +443,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		onDispose: mcpManager ? () => mcpManager?.dispose() : undefined,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 
@@ -415,5 +451,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		session,
 		extensionsResult,
 		modelFallbackMessage,
+		mcpManager,
 	};
 }

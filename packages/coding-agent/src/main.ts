@@ -743,6 +743,8 @@ export async function main(args: string[], options?: MainOptions) {
 			customTools: sessionOptions.customTools,
 			fsPolicy: sessionOptions.fsPolicy,
 			sandboxBackend: sessionOptions.sandboxBackend,
+			mcpServers: parsed.noMcp ? undefined : settingsManager.getMcpServers(),
+			onMcpWarning: (message) => diagnostics.push({ type: "warning", message }),
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
