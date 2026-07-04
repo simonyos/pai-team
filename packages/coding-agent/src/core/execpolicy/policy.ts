@@ -243,6 +243,14 @@ function gitReadOnly(argv: readonly string[]): boolean {
 			return positionals[0] === "log" || positionals[0] === "view";
 		case "notes":
 			return positionals.length === 0 || positionals[0] === "list" || positionals[0] === "show";
+		case "symbolic-ref":
+			// `git symbolic-ref [-q|--short] <name>` reads; a second (ref value) positional or -d/--delete writes.
+			return positionals.length <= 1 && !rest.includes("-d") && !rest.includes("--delete");
+		case "reflog": {
+			// Bare `git reflog` == `reflog show`; only show/exists read — expire/delete/write mutate.
+			const sub = positionals[0];
+			return sub === undefined || sub === "show" || sub === "exists";
+		}
 		default:
 			return false;
 	}
