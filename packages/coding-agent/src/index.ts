@@ -162,6 +162,30 @@ export {
 } from "./core/extensions/index.ts";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
+// Git helpers (Wave 2.2, slice G1)
+export {
+	type GitCommitEntry,
+	type GitDiffOptions,
+	type GitReadOptions,
+	type GitReadResult,
+	type GitStatus,
+	type GitStatusEntry,
+	getCurrentBranch,
+	getDefaultBranch,
+	getDiff,
+	getGitRoot,
+	getHeadSha,
+	getRecentCommits,
+	getRemoteUrl,
+	getStagedFiles,
+	getStatus,
+	hasUnpushedCommits,
+	isTransientState,
+	runGitRead,
+} from "./core/git/git-helpers.ts";
+export { findGitPaths, type GitPaths, resolveBranchWithGitAsync, resolveBranchWithGitSync } from "./core/git/paths.ts";
+export { diffContainsLikelySecret } from "./core/git/secret-guard.ts";
+export { isSafeRefName, isValidGitSha } from "./core/git/validate.ts";
 // MCP client (Wave 2.1)
 export {
 	buildMcpToolName,
