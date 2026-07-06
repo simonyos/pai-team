@@ -183,6 +183,7 @@ export {
 	isTransientState,
 	runGitRead,
 } from "./core/git/git-helpers.ts";
+export { buildGitSafetySection, GIT_SAFETY_PROTOCOL } from "./core/git/git-safety-prompt.ts";
 export { findGitPaths, type GitPaths, resolveBranchWithGitAsync, resolveBranchWithGitSync } from "./core/git/paths.ts";
 export { diffContainsLikelySecret } from "./core/git/secret-guard.ts";
 export { isSafeRefName, isValidGitSha } from "./core/git/validate.ts";
@@ -216,6 +217,7 @@ export { DefaultPackageManager } from "./core/package-manager.ts";
 // System-prompt sections (S5)
 export {
 	BEHAVIORAL_POLICY_SECTION,
+	GIT_SAFETY_PROTOCOL_SECTION,
 	PERMISSION_POLICY_SECTION,
 	PLAN_MODE_SECTION,
 	renderSafetySections,

@@ -1,5 +1,5 @@
 /**
- * Composable system-prompt sections (Wave 0.2 + Wave 1.5, slice S5).
+ * Composable system-prompt sections (Wave 0.2 + Wave 1.5, slice S5; Wave 2.2, slice G3).
  *
  * Introduces a small section registry — `SystemPromptSection { name, compute(ctx) }`
  * — and the safety/behavioral sections that make the model AWARE of the guardrails
@@ -7,11 +7,16 @@
  * and OS sandbox (S4) ENFORCE. The enforcement already exists; these sections tell
  * the model the rules so it cooperates instead of repeatedly hitting them.
  *
+ * G3 adds `GIT_SAFETY_PROTOCOL_SECTION`, a git-mutation-specific specialization of
+ * `BEHAVIORAL_POLICY_SECTION` (see `core/git/git-safety-prompt.ts` for the text and
+ * scope notes).
+ *
  * Cache discipline: every section here computes from per-SESSION-stable inputs
  * (the permission mode), never per-turn volatile content, so appending them keeps
  * the cached prompt prefix stable. Volatile content (date/cwd) stays in the footer.
  */
 
+import { buildGitSafetySection } from "./git/git-safety-prompt.ts";
 import type { PermissionMode } from "./permissions/permission-types.ts";
 
 export interface SystemPromptSectionContext {
@@ -39,6 +44,12 @@ Operating principles:
 export const BEHAVIORAL_POLICY_SECTION: SystemPromptSection = {
 	name: "behavioral_policy",
 	compute: (ctx) => (ctx.includeBehavioralPolicy ? BEHAVIORAL_POLICY : null),
+};
+
+/** Git-mutation-specific guardrails; unconditional, since git is reachable via bash regardless of permission mode. */
+export const GIT_SAFETY_PROTOCOL_SECTION: SystemPromptSection = {
+	name: "git_safety_protocol",
+	compute: () => buildGitSafetySection(),
 };
 
 const PERMISSION_INTRO =
@@ -78,6 +89,7 @@ export const PLAN_MODE_SECTION: SystemPromptSection = {
 /** The safety/behavioral sections, in render order. */
 export const SAFETY_SECTIONS: readonly SystemPromptSection[] = [
 	BEHAVIORAL_POLICY_SECTION,
+	GIT_SAFETY_PROTOCOL_SECTION,
 	PERMISSION_POLICY_SECTION,
 	PLAN_MODE_SECTION,
 ];
