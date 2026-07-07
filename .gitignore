@@ -17,6 +17,9 @@ packages/*/dist-firefox/
 .zed/
 .idea/
 .claude/
+
+# Paperclip-managed agent working state (linked worktrees, per-run scratch)
+.paperclip/
 *.swp
 *.swo
 *~
