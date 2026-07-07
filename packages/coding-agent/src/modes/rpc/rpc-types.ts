@@ -66,7 +66,15 @@ export type RpcCommand =
 	| { id?: string; type: "get_messages" }
 
 	// Commands (available for invocation via prompt)
-	| { id?: string; type: "get_commands" };
+	| { id?: string; type: "get_commands" }
+
+	// Coded (built-in) commands.
+	// REGISTRATION POINT: to wire a future first-class command (e.g. Wave 2.2
+	// G4/G5 /commit, /branch), add ONE union member here, add a matching `case`
+	// in handleCommand (rpc-mode.ts), a response variant in RpcResponse below,
+	// and a client method in rpc-client.ts. `ping_builtin` is a permanent no-op
+	// reference command that exercises this path end-to-end.
+	| { id?: string; type: "ping_builtin" };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -201,6 +209,9 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcSlashCommand[] };
 	  }
+
+	// Coded (built-in) commands (see RpcCommand registration point)
+	| { id?: string; type: "response"; command: "ping_builtin"; success: true; data: { pong: true } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

@@ -665,6 +665,20 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_commands", { commands });
 			}
 
+			// =================================================================
+			// Coded (built-in) commands
+			//
+			// REGISTRATION POINT: to wire a future first-class command (e.g. Wave
+			// 2.2 G4/G5 /commit, /branch), add ONE case here plus the matching
+			// RpcCommand/RpcResponse union members (rpc-types.ts) and a client
+			// method (rpc-client.ts). `ping_builtin` is a permanent no-op
+			// reference command that exercises this path end-to-end.
+			// =================================================================
+
+			case "ping_builtin": {
+				return success(id, "ping_builtin", { pong: true });
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

@@ -419,6 +419,18 @@ export class RpcClient {
 		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
 	}
 
+	/**
+	 * Invoke the `ping_builtin` coded command (a permanent no-op reference).
+	 *
+	 * REGISTRATION POINT: to issue a future first-class command from a client
+	 * (e.g. Wave 2.2 G4/G5 /commit, /branch), add a method here that sends the
+	 * new RpcCommand shape, mirroring this one.
+	 */
+	async pingBuiltin(): Promise<{ pong: true }> {
+		const response = await this.send({ type: "ping_builtin" });
+		return this.getData(response);
+	}
+
 	// =========================================================================
 	// Helpers
 	// =========================================================================

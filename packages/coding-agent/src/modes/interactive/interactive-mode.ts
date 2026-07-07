@@ -243,6 +243,29 @@ export function isApiKeyLoginProvider(
 }
 
 /**
+ * A "coded" (built-in) slash command handled directly by interactive mode.
+ *
+ * See {@link InteractiveMode.buildCodedCommands} for the ordered registration
+ * table and instructions for adding a new command.
+ */
+interface CodedCommand {
+	/** Returns true if this entry should handle the given submitted line. */
+	match: (text: string) => boolean;
+	/** Runs the command. Responsible for clearing the editor as appropriate. */
+	run: (text: string) => void | Promise<void>;
+}
+
+/** Matches an exact command with no arguments (e.g. `/new`). */
+function matchesExact(name: string): (text: string) => boolean {
+	return (text) => text === name;
+}
+
+/** Matches a command with optional arguments (e.g. `/compact` or `/compact <instructions>`). */
+function matchesExactOrArg(name: string): (text: string) => boolean {
+	return (text) => text === name || text.startsWith(`${name} `);
+}
+
+/**
  * Options for InteractiveMode initialization.
  */
 export interface InteractiveModeOptions {
@@ -2539,132 +2562,9 @@ export class InteractiveMode {
 			text = text.trim();
 			if (!text) return;
 
-			// Handle commands
-			if (text === "/settings") {
-				this.showSettingsSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleModelCommand(searchTerm);
-				return;
-			}
-			if (text === "/export" || text.startsWith("/export ")) {
-				await this.handleExportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/import" || text.startsWith("/import ")) {
-				await this.handleImportCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.handleShareCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/copy") {
-				await this.handleCopyCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.handleNameCommand(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/session") {
-				this.handleSessionCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/changelog") {
-				this.handleChangelogCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/hotkeys") {
-				this.handleHotkeysCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/fork") {
-				this.showUserMessageSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.handleCloneCommand();
-				return;
-			}
-			if (text === "/tree") {
-				this.showTreeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/trust") {
-				this.showTrustSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/login") {
-				this.showOAuthSelector("login");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/logout") {
-				this.showOAuthSelector("logout");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/new") {
-				this.editor.setText("");
-				await this.handleClearCommand();
-				return;
-			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
-			if (text === "/debug") {
-				this.handleDebugCommand();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/arminsayshi") {
-				this.handleArminSaysHi();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/dementedelves") {
-				this.handleDementedDelves();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume") {
-				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/quit") {
-				this.editor.setText("");
-				await this.shutdown();
+			// Coded (built-in) slash-command dispatch. This is the single
+			// registration point for first-class commands; see buildCodedCommands.
+			if (await this.tryHandleCodedCommand(text)) {
 				return;
 			}
 
@@ -2721,6 +2621,231 @@ export class InteractiveMode {
 			this.editor.addToHistory?.(text);
 		};
 	}
+
+	/**
+	 * Attempts to handle a submitted line as a coded (built-in) slash command.
+	 * Returns true if a command matched and consumed the input.
+	 */
+	private async tryHandleCodedCommand(text: string): Promise<boolean> {
+		this.codedCommands ??= this.buildCodedCommands();
+		for (const command of this.codedCommands) {
+			if (command.match(text)) {
+				await command.run(text);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * CODED SLASH-COMMAND REGISTRATION POINT (interactive mode).
+	 *
+	 * Ordered table of built-in ("coded") slash commands. Every submitted line is
+	 * matched against this table (in order) before falling through to bash /
+	 * extension / prompt dispatch; the first matching entry runs and consumes the
+	 * input.
+	 *
+	 * To wire a future first-class command (e.g. Wave 2.2 G4/G5 /commit, /branch,
+	 * /commit-push-pr): add ONE entry here. If the command should appear in
+	 * autocomplete, also add a matching { name, description } to
+	 * BUILTIN_SLASH_COMMANDS in core/slash-commands.ts. That list is UI-only
+	 * (autocomplete/listing, see createBaseAutocompleteProvider) and is NOT kept
+	 * in sync with this dispatch table automatically — update both by hand.
+	 *
+	 * `/ping-builtin` below is a permanent no-op reference command (hidden from
+	 * autocomplete, like /debug) that exercises this path end-to-end.
+	 */
+	private buildCodedCommands(): CodedCommand[] {
+		return [
+			{
+				match: matchesExact("/settings"),
+				run: () => {
+					this.showSettingsSelector();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/scoped-models"),
+				run: async () => {
+					this.editor.setText("");
+					await this.showModelsSelector();
+				},
+			},
+			{
+				match: matchesExactOrArg("/model"),
+				run: async (text) => {
+					const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
+					this.editor.setText("");
+					await this.handleModelCommand(searchTerm);
+				},
+			},
+			{
+				match: matchesExactOrArg("/export"),
+				run: async (text) => {
+					await this.handleExportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExactOrArg("/import"),
+				run: async (text) => {
+					await this.handleImportCommand(text);
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/share"),
+				run: async () => {
+					await this.handleShareCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/copy"),
+				run: async () => {
+					await this.handleCopyCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExactOrArg("/name"),
+				run: (text) => {
+					this.handleNameCommand(text);
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/session"),
+				run: () => {
+					this.handleSessionCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/changelog"),
+				run: () => {
+					this.handleChangelogCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/hotkeys"),
+				run: () => {
+					this.handleHotkeysCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/fork"),
+				run: () => {
+					this.showUserMessageSelector();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/clone"),
+				run: async () => {
+					this.editor.setText("");
+					await this.handleCloneCommand();
+				},
+			},
+			{
+				match: matchesExact("/tree"),
+				run: () => {
+					this.showTreeSelector();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/trust"),
+				run: () => {
+					this.showTrustSelector();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/login"),
+				run: () => {
+					this.showOAuthSelector("login");
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/logout"),
+				run: () => {
+					this.showOAuthSelector("logout");
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/new"),
+				run: async () => {
+					this.editor.setText("");
+					await this.handleClearCommand();
+				},
+			},
+			{
+				match: matchesExactOrArg("/compact"),
+				run: async (text) => {
+					const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+					this.editor.setText("");
+					await this.handleCompactCommand(customInstructions);
+				},
+			},
+			{
+				match: matchesExact("/reload"),
+				run: async () => {
+					this.editor.setText("");
+					await this.handleReloadCommand();
+				},
+			},
+			{
+				match: matchesExact("/debug"),
+				run: () => {
+					this.handleDebugCommand();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/arminsayshi"),
+				run: () => {
+					this.handleArminSaysHi();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/dementedelves"),
+				run: () => {
+					this.handleDementedDelves();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/resume"),
+				run: () => {
+					this.showSessionSelector();
+					this.editor.setText("");
+				},
+			},
+			{
+				match: matchesExact("/quit"),
+				run: async () => {
+					this.editor.setText("");
+					await this.shutdown();
+				},
+			},
+			// Reference/no-op command exercising the coded-command path. See doc comment above.
+			{
+				match: matchesExact("/ping-builtin"),
+				run: () => {
+					this.editor.setText("");
+					this.showStatus("pong (coded-command dispatch OK)");
+				},
+			},
+		];
+	}
+
+	private codedCommands?: CodedCommand[];
 
 	private subscribeToAgent(): void {
 		this.unsubscribe = this.session.subscribe(async (event) => {
