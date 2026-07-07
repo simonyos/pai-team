@@ -25,7 +25,7 @@ import {
 	specialReadOnly,
 	WRAPPER_PROGRAMS,
 } from "./safelist.ts";
-import { type CommandSegment, parseCommandLine, type RedirectInfo } from "./tokenize.ts";
+import { type CommandSegment, extractSubstitutions, parseCommandLine, type RedirectInfo } from "./tokenize.ts";
 
 export interface ExecEval {
 	decision: Decision;
@@ -304,6 +304,28 @@ const WRAPPER_VALUE_FLAGS: Record<string, ReadonlySet<string>> = {
 	ionice: new Set(["-c", "--class", "-n", "--classdata", "-p", "--pid"]),
 	chrt: new Set(["-p"]),
 	stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
+	// Only xargs options that REQUIRE a separate value token are listed, so the
+	// scanner consumes `-I {}` / `-n 1` as flag+value and stops at the inner
+	// command. Glued forms (`-I{}`, `-n1`) and no-value flags (`-r`, `-0`, `-t`,
+	// `-p`, `--replace`, `-i`) fall through the generic leading-flag skip. Optional-
+	// argument flags are intentionally EXCLUDED: listing them could swallow the
+	// inner program (e.g. `--replace git push`) and under-report the invocation.
+	xargs: new Set([
+		"-I",
+		"-n",
+		"--max-args",
+		"-L",
+		"--max-lines",
+		"-P",
+		"--max-procs",
+		"-s",
+		"--max-chars",
+		"-d",
+		"--delimiter",
+		"-E",
+		"-a",
+		"--arg-file",
+	]),
 };
 
 /** Wrappers that take a leading positional operand (e.g. `timeout 5 cmd`). */
@@ -520,27 +542,46 @@ export class ExecPolicy {
 
 	/**
 	 * Does any segment of this command line invoke one of `programs` at the program
-	 * position, after unwrapping privilege/wrapper prefixes (`sudo git …`, `env git …`)
-	 * and inline `sh -c "git …"` strings? Used by the headless mutation gate to scope
-	 * its default-deny to git/gh; the mutating/read-only judgment stays with
-	 * `isReadOnly` so there is no second verb list.
+	 * position? Used by the headless mutation gate to scope its default-deny to
+	 * git/gh; the mutating/read-only judgment stays with `isReadOnly` so there is no
+	 * second verb list. Detection unwraps privilege/wrapper prefixes (`sudo git …`,
+	 * `env git …`, `xargs git …`), normalizes `argv[0]` to a basename (so
+	 * `/usr/bin/git` and `./git` match `git`), and recurses into inline
+	 * `sh -c "git …"` strings AND every command/process substitution in the line
+	 * (`$(git …)`, `` `git …` ``, `<(git …)` — which the tokenizer keeps as opaque
+	 * literals). Errs toward OVER-reporting, which only tightens the gate.
+	 *
+	 * Known residual gaps (documented, not closed here): `find … -exec git … \;`
+	 * embeds the command mid-arguments rather than as a prefix, so unwrap cannot
+	 * reach it, and `find` classifies read-only unless it deletes/execs — closing it
+	 * needs matching logic in `isReadOnly` too, tracked separately. The `command`
+	 * builtin (`command git push`) is a distinct pre-existing systemic bypass tracked
+	 * in its own issue.
 	 */
 	invokesAnyProgram(command: string, programs: ReadonlySet<string>, depth = 0): boolean {
 		const parsed = parseCommandLine(command);
 		for (const seg of parsed.segments) {
 			const { inner } = unwrap(seg.argv);
-			if (inner.length > 0 && programs.has(inner[0])) return true;
-			const inline = extractShellInlineCommand(inner);
-			if (
-				inline !== undefined &&
-				depth < SHELL_RECURSION_LIMIT &&
-				this.invokesAnyProgram(inline, programs, depth + 1)
-			) {
-				return true;
-			}
+			if (inner.length > 0 && programs.has(programBasename(inner[0]))) return true;
+		}
+		if (depth >= SHELL_RECURSION_LIMIT) return false;
+		for (const seg of parsed.segments) {
+			const inline = extractShellInlineCommand(unwrap(seg.argv).inner);
+			if (inline !== undefined && this.invokesAnyProgram(inline, programs, depth + 1)) return true;
+		}
+		// Command/process substitutions hide invocations the tokenizer keeps as opaque
+		// literals; recurse into each one found across the raw line.
+		for (const sub of extractSubstitutions(command)) {
+			if (this.invokesAnyProgram(sub, programs, depth + 1)) return true;
 		}
 		return false;
 	}
+}
+
+/** Final path component of a program word, so `/usr/bin/git` and `./git` match `git`. */
+function programBasename(program: string): string {
+	const cut = program.lastIndexOf("/");
+	return cut >= 0 ? program.slice(cut + 1) : program;
 }
 
 function writesAnyFile(redirects: readonly RedirectInfo[]): boolean {

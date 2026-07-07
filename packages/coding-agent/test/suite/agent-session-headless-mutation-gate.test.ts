@@ -97,6 +97,46 @@ describe("headless mutation gate", () => {
 		}
 	});
 
+	// Adversarial regressions (XZI-10): three bypasses an adversarial review of the
+	// original gate found. Each evaded classification and fell through to the headless
+	// default-allow; all must now be denied with the gate's message.
+	const bypassCases: ReadonlyArray<{ name: string; command: string }> = [
+		{ name: "command substitution $(…)", command: "$(git push origin main)" },
+		{ name: "backtick substitution", command: "`git push origin main`" },
+		{ name: "substitution after a benign compound", command: "echo hi && $(git push origin main)" },
+		{ name: "process substitution <(…)", command: "diff <(git push origin main) /dev/null" },
+		{ name: "double-quoted command substitution", command: 'echo "$(git push origin main)"' },
+		{ name: "absolute path to git", command: "/usr/bin/git push origin main" },
+		{ name: "relative path to git", command: "./git push origin main" },
+		{ name: "xargs wrapper (glued -I{})", command: "echo start; xargs -I{} git push origin main <<< x" },
+		{ name: "xargs wrapper (separated -I {})", command: "xargs -I {} git push origin main" },
+	];
+
+	for (const { name, command } of bypassCases) {
+		it(`denies the ${name} bypass headless`, async () => {
+			const harness = await createHarness();
+			try {
+				const result = await resolvePermission(harness, "bash", { command });
+				expect(denyMessage(result)).toContain("mutating git/gh command denied");
+			} finally {
+				harness.cleanup();
+			}
+		});
+	}
+
+	it("still honors an explicit allow rule for a path-form git command headless", async () => {
+		// Default-deny, not hard-deny: a user allow rule for the path form still proceeds.
+		const harness = await createHarness({
+			settings: { permissionRules: { allow: ["bash(/usr/bin/git push:*)"] } },
+		});
+		try {
+			const push = await resolvePermission(harness, "bash", { command: "/usr/bin/git push origin main" });
+			expect(push.behavior).toBe("allow");
+		} finally {
+			harness.cleanup();
+		}
+	});
+
 	it("still prompts (resolves to ask) for the same command in interactive TUI mode", async () => {
 		const harness = await createHarness();
 		const select = vi.fn(async (_title: string, _options: string[]) => "Deny");

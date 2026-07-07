@@ -39,6 +39,14 @@ const GIT_GH_PROGRAMS: ReadonlySet<string> = new Set(["git", "gh"]);
  * as the single source of truth for "mutating" — no second verb list. Coarse by
  * design: a compound command mixing git/gh with another mutation
  * (`git status && rm foo`) is also treated as mutating, which only tightens the gate.
+ *
+ * Detection (see `ExecPolicy.invokesAnyProgram`) unwraps wrapper prefixes including
+ * `xargs`, normalizes path forms (`/usr/bin/git`, `./git`) to a basename, and
+ * recurses into `sh -c "…"` strings and command/process substitution (`$(…)`,
+ * backticks, `<(…)`) — closing the command-substitution, path-based, and xargs
+ * bypasses. Residual known gaps not closed here: `find … -exec git … \;` and the
+ * `command git push` builtin (a separate pre-existing systemic bypass tracked in
+ * its own issue).
  */
 export function classifyBashGitOrGhMutation(command: string, policy: ExecPolicy = defaultExecPolicy): boolean {
 	if (!policy.invokesAnyProgram(command, GIT_GH_PROGRAMS)) return false;
