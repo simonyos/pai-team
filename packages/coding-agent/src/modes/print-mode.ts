@@ -26,6 +26,33 @@ export interface PrintModeOptions {
 }
 
 /**
+ * CODED SLASH-COMMAND REGISTRATION POINT (print/headless mode).
+ *
+ * Print mode has no first-class-command UI; without this hook a built-in
+ * ("coded") command would fall through to session.prompt() and be sent to the
+ * LLM as literal text. Every message is checked here before prompting; a
+ * matching command is handled and produces observable output instead.
+ *
+ * To wire a future first-class command (e.g. Wave 2.2 G4/G5 /commit, /branch):
+ * add a branch here. `/ping-builtin` is a permanent no-op reference command
+ * that exercises this path end-to-end.
+ *
+ * Returns true if the message was handled as a coded command.
+ */
+function handleCodedCommand(message: string, mode: "text" | "json"): boolean {
+	const trimmed = message.trim();
+	if (trimmed === "/ping-builtin") {
+		if (mode === "json") {
+			writeRawStdout(`${JSON.stringify({ type: "coded_command", command: "ping-builtin", output: "pong" })}\n`);
+		} else {
+			writeRawStdout("pong\n");
+		}
+		return true;
+	}
+	return false;
+}
+
+/**
  * Run in print (single-shot) mode.
  * Sends prompts to the agent and outputs the result.
  */
@@ -118,12 +145,14 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		await rebindSession();
 
-		if (initialMessage) {
+		if (initialMessage && !handleCodedCommand(initialMessage, mode)) {
 			await session.prompt(initialMessage, { images: initialImages });
 		}
 
 		for (const message of messages) {
-			await session.prompt(message);
+			if (!handleCodedCommand(message, mode)) {
+				await session.prompt(message);
+			}
 		}
 
 		if (mode === "text") {

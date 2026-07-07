@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
+type CodedCommand = { match: (text: string) => boolean; run: (text: string) => void | Promise<void> };
+
 type SubmitContext = {
 	defaultEditor: { onSubmit?: (text: string) => void };
 	editor: {
@@ -16,6 +18,11 @@ type SubmitContext = {
 	flushPendingBashComponents: () => void;
 	onInputCallback?: (text: string) => void;
 	pendingUserInputs: string[];
+	// Coded-command dispatch is invoked from onSubmit; wire the real prototype
+	// methods so a normal prompt correctly falls through to queueing.
+	codedCommands?: CodedCommand[];
+	tryHandleCodedCommand: (text: string) => Promise<boolean>;
+	buildCodedCommands: () => CodedCommand[];
 };
 
 type InputContext = {
@@ -26,6 +33,8 @@ type InputContext = {
 type InteractiveModePrivate = {
 	setupEditorSubmitHandler(this: SubmitContext): void;
 	getUserInput(this: InputContext): Promise<string>;
+	tryHandleCodedCommand(this: SubmitContext, text: string): Promise<boolean>;
+	buildCodedCommands(this: SubmitContext): CodedCommand[];
 };
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrivate;
@@ -45,6 +54,8 @@ function createSubmitContext(): SubmitContext {
 		},
 		flushPendingBashComponents: vi.fn(),
 		pendingUserInputs: [],
+		tryHandleCodedCommand: interactiveModePrototype.tryHandleCodedCommand,
+		buildCodedCommands: interactiveModePrototype.buildCodedCommands,
 	};
 }
 
