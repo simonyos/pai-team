@@ -375,3 +375,63 @@ function skipInlineWhitespace(src: string, start: number): number {
 	while (i < src.length && WHITESPACE.has(src[i])) i++;
 	return i;
 }
+
+/**
+ * Extract the inner command string of every command/process substitution in
+ * `text`: `$(...)`, `` `...` `` (command substitution) and `<(...)` / `>(...)`
+ * (process substitution). Callers that must judge what a substitution would run
+ * (e.g. the headless mutation gate) recurse into these strings instead of
+ * treating `$(git push)` as one opaque literal token the tokenizer never looks
+ * inside. Only the OUTERMOST substitutions are returned; nested
+ * `$( … $(…) … )` is reached by recursing on the returned strings.
+ *
+ * Single-quoted runs are skipped, since their contents are literal and never
+ * executed by the shell; double-quoted runs are NOT skipped, because a `"$(…)"`
+ * substitution does execute. Balanced-paren scanning honors quotes inside the
+ * body so a `)` within a quoted argument does not truncate it early. Escaped
+ * `\$(` / `` \` `` / `\<(` are skipped. Errs toward OVER-extraction on
+ * imbalance, which only tightens any gate that consumes the result.
+ */
+export function extractSubstitutions(text: string): string[] {
+	const out: string[] = [];
+	const state: ScanState = { hasCommandSubstitution: false, hasProcessSubstitution: false };
+	const pushParenBody = (start: number): number => {
+		// `start` points at the "(" of `$(`, `<(`, or `>(`.
+		const end = consumeBalancedParen(text, start, state);
+		const closed = text[end - 1] === ")";
+		out.push(text.slice(start + 1, closed ? end - 1 : end));
+		return end;
+	};
+	let i = 0;
+	while (i < text.length) {
+		const ch = text[i];
+		if (ch === "\\") {
+			i += 2;
+			continue;
+		}
+		if (ch === "'") {
+			i = skipSingleQuote(text, i + 1, state);
+			continue;
+		}
+		if (ch === "$" && text[i + 1] === "(") {
+			i = pushParenBody(i + 1);
+			continue;
+		}
+		if ((ch === "<" || ch === ">") && text[i + 1] === "(") {
+			i = pushParenBody(i + 1);
+			continue;
+		}
+		if (ch === "`") {
+			const close = text.indexOf("`", i + 1);
+			if (close === -1) {
+				out.push(text.slice(i + 1));
+				break;
+			}
+			out.push(text.slice(i + 1, close));
+			i = close + 1;
+			continue;
+		}
+		i++;
+	}
+	return out;
+}

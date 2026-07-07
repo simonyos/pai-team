@@ -8,7 +8,7 @@
  * classifyReadOnly + checkPermissions.
  */
 
-export { checkBashPermission, classifyBashReadOnly } from "./command-safety.ts";
+export { checkBashPermission, classifyBashGitOrGhMutation, classifyBashReadOnly } from "./command-safety.ts";
 export { type Decision, mostRestrictive, mostRestrictiveOf } from "./decision.ts";
 export { defaultExecPolicy, type ExecEval, ExecPolicy } from "./policy.ts";
 export {

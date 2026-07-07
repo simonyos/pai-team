@@ -52,6 +52,7 @@ import {
 	shouldCompact,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { classifyBashGitOrGhMutation } from "./execpolicy/index.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.ts";
 import {
@@ -543,6 +544,17 @@ export class AgentSession {
 		// blocking on a dialog the client may never answer.
 		const ctx = this._extensionRunner.createContext();
 		if (ctx.mode !== "tui" || !ctx.hasUI) {
+			// Headless mutation gate (G0b): a mutating git/gh command reaching this "ask"
+			// with no explicit allow rule (an allow rule would have short-circuited above)
+			// is default-denied regardless of the global nonInteractivePermission toggle —
+			// closing the live gap where `git push` / `gh pr merge` were silently allowed in
+			// RPC/print mode. Interactive TUI is unaffected: this branch is non-interactive only.
+			if (toolName === "bash" && typeof input.command === "string" && classifyBashGitOrGhMutation(input.command)) {
+				return {
+					behavior: "deny",
+					message: `${decision.message} (mutating git/gh command denied: no interactive approval available and no allow rule configured)`,
+				};
+			}
 			return this.settingsManager.getNonInteractivePermission() === "deny"
 				? { behavior: "deny", message: `${decision.message} (no interactive prompt available; denied)` }
 				: { behavior: "allow" };

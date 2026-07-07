@@ -149,6 +149,10 @@ export const WRAPPER_PROGRAMS: ReadonlySet<string> = new Set([
 	"time",
 	"ionice",
 	"chrt",
+	// `xargs` runs its trailing argument as the command (e.g. `xargs git push`), so
+	// it is a wrapper: unwrap past its own options to reach the inner program. Its
+	// value-taking options are declared in policy.ts (WRAPPER_VALUE_FLAGS).
+	"xargs",
 ]);
 
 /** Privilege-escalating wrappers: unwrap the inner command but never drop below "prompt". */
