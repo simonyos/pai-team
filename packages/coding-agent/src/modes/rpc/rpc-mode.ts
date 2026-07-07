@@ -19,6 +19,8 @@ import type {
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { buildBranchCommand } from "../../core/git/branch-command.ts";
+import { buildCommitCommand } from "../../core/git/commit-command.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -668,15 +670,36 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 			// Coded (built-in) commands
 			//
-			// REGISTRATION POINT: to wire a future first-class command (e.g. Wave
-			// 2.2 G4/G5 /commit, /branch), add ONE case here plus the matching
-			// RpcCommand/RpcResponse union members (rpc-types.ts) and a client
-			// method (rpc-client.ts). `ping_builtin` is a permanent no-op
-			// reference command that exercises this path end-to-end.
+			// REGISTRATION POINT: to wire a future first-class command, add ONE
+			// case here plus the matching RpcCommand/RpcResponse union members
+			// (rpc-types.ts) and a client method (rpc-client.ts). `ping_builtin`
+			// is a permanent no-op reference command that exercises this path
+			// end-to-end. `commit`/`branch` (Wave 2.2 G4) are the first real
+			// commands built on this path: both refuse (error response) or hand
+			// off to the model via `session.sendUserMessage` (success response),
+			// per the shared core logic in core/git/{commit,branch}-command.ts.
 			// =================================================================
 
 			case "ping_builtin": {
 				return success(id, "ping_builtin", { pong: true });
+			}
+
+			case "commit": {
+				const result = await buildCommitCommand(session.sessionManager.getCwd(), command.args ?? "");
+				if (result.kind === "refuse") {
+					return error(id, "commit", result.message);
+				}
+				await session.sendUserMessage(result.text);
+				return success(id, "commit", { sent: true });
+			}
+
+			case "branch": {
+				const result = await buildBranchCommand(session.sessionManager.getCwd(), command.args);
+				if (result.kind === "refuse") {
+					return error(id, "branch", result.message);
+				}
+				await session.sendUserMessage(result.text);
+				return success(id, "branch", { sent: true });
 			}
 
 			default: {

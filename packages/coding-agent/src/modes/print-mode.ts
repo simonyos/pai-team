@@ -7,7 +7,10 @@
  */
 
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
+import type { AgentSession } from "../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
+import { buildBranchCommand } from "../core/git/branch-command.ts";
+import { buildCommitCommand } from "../core/git/commit-command.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 
@@ -26,6 +29,36 @@ export interface PrintModeOptions {
 }
 
 /**
+ * Prints/emits a `/commit` or `/branch` result: on refusal, surface the refusal
+ * message (and never call `sendUserMessage`); on success, hand the primed
+ * prompt to the model via `session.sendUserMessage` (which always triggers a
+ * turn — the resulting assistant response flows through the normal text/json
+ * output paths in `runPrintMode`).
+ */
+async function reportCodedGitCommandResult(
+	mode: "text" | "json",
+	command: "commit" | "branch",
+	result: { kind: "refuse"; message: string } | { kind: "prompt"; text: string },
+	session: AgentSession,
+): Promise<void> {
+	if (result.kind === "refuse") {
+		if (mode === "json") {
+			writeRawStdout(
+				`${JSON.stringify({ type: "coded_command", command, refused: true, message: result.message })}\n`,
+			);
+		} else {
+			writeRawStdout(`${result.message}\n`);
+		}
+		return;
+	}
+
+	if (mode === "json") {
+		writeRawStdout(`${JSON.stringify({ type: "coded_command", command, refused: false })}\n`);
+	}
+	await session.sendUserMessage(result.text);
+}
+
+/**
  * CODED SLASH-COMMAND REGISTRATION POINT (print/headless mode).
  *
  * Print mode has no first-class-command UI; without this hook a built-in
@@ -33,13 +66,15 @@ export interface PrintModeOptions {
  * LLM as literal text. Every message is checked here before prompting; a
  * matching command is handled and produces observable output instead.
  *
- * To wire a future first-class command (e.g. Wave 2.2 G4/G5 /commit, /branch):
- * add a branch here. `/ping-builtin` is a permanent no-op reference command
- * that exercises this path end-to-end.
+ * To wire a future first-class command: add a branch here. `/ping-builtin` is
+ * a permanent no-op reference command that exercises this path end-to-end.
+ * `/commit`/`/branch` (Wave 2.2 G4) are the first real commands on this path —
+ * both need `session` (to read live git state / cwd and call
+ * `sendUserMessage`), which is why this function takes it as a parameter.
  *
  * Returns true if the message was handled as a coded command.
  */
-function handleCodedCommand(message: string, mode: "text" | "json"): boolean {
+async function handleCodedCommand(message: string, mode: "text" | "json", session: AgentSession): Promise<boolean> {
 	const trimmed = message.trim();
 	if (trimmed === "/ping-builtin") {
 		if (mode === "json") {
@@ -49,6 +84,21 @@ function handleCodedCommand(message: string, mode: "text" | "json"): boolean {
 		}
 		return true;
 	}
+
+	if (trimmed === "/commit" || trimmed.startsWith("/commit ")) {
+		const args = trimmed.startsWith("/commit ") ? trimmed.slice("/commit ".length).trim() : "";
+		const result = await buildCommitCommand(session.sessionManager.getCwd(), args);
+		await reportCodedGitCommandResult(mode, "commit", result, session);
+		return true;
+	}
+
+	if (trimmed === "/branch" || trimmed.startsWith("/branch ")) {
+		const args = trimmed.startsWith("/branch ") ? trimmed.slice("/branch ".length).trim() : "";
+		const result = await buildBranchCommand(session.sessionManager.getCwd(), args);
+		await reportCodedGitCommandResult(mode, "branch", result, session);
+		return true;
+	}
+
 	return false;
 }
 
@@ -145,12 +195,12 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		await rebindSession();
 
-		if (initialMessage && !handleCodedCommand(initialMessage, mode)) {
+		if (initialMessage && !(await handleCodedCommand(initialMessage, mode, session))) {
 			await session.prompt(initialMessage, { images: initialImages });
 		}
 
 		for (const message of messages) {
-			if (!handleCodedCommand(message, mode)) {
+			if (!(await handleCodedCommand(message, mode, session))) {
 				await session.prompt(message);
 			}
 		}

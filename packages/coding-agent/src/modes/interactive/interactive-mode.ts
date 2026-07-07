@@ -74,6 +74,8 @@ import type {
 	ProjectTrustContext,
 } from "../../core/extensions/index.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
+import { buildBranchCommand } from "../../core/git/branch-command.ts";
+import { buildCommitCommand } from "../../core/git/commit-command.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
@@ -2832,6 +2834,32 @@ export class InteractiveMode {
 				run: async () => {
 					this.editor.setText("");
 					await this.shutdown();
+				},
+			},
+			{
+				match: matchesExactOrArg("/commit"),
+				run: async (text) => {
+					const args = text.startsWith("/commit ") ? text.slice("/commit ".length).trim() : "";
+					this.editor.setText("");
+					const result = await buildCommitCommand(this.sessionManager.getCwd(), args);
+					if (result.kind === "refuse") {
+						this.showStatus(result.message);
+						return;
+					}
+					await this.session.sendUserMessage(result.text);
+				},
+			},
+			{
+				match: matchesExactOrArg("/branch"),
+				run: async (text) => {
+					const args = text.startsWith("/branch ") ? text.slice("/branch ".length).trim() : "";
+					this.editor.setText("");
+					const result = await buildBranchCommand(this.sessionManager.getCwd(), args);
+					if (result.kind === "refuse") {
+						this.showStatus(result.message);
+						return;
+					}
+					await this.session.sendUserMessage(result.text);
 				},
 			},
 			// Reference/no-op command exercising the coded-command path. See doc comment above.
