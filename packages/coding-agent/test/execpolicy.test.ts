@@ -345,6 +345,50 @@ describe("code-review hardening (S2 review findings)", () => {
 	});
 });
 
+describe("`command` builtin bypass (S2 XZI-9)", () => {
+	it("unwraps `command <program>` and classifies the inner program's mutation", () => {
+		// The bug: `command` was an unconditional READ_ONLY_PROGRAM, so any mutation
+		// prefixed with it was judged read-only and executed with no prompt.
+		expect(decisionOf("command git push origin --force main")).toBe("prompt");
+		expect(decisionOf("command git push")).toBe("prompt");
+		expect(decisionOf("command gh repo delete owner/repo --yes")).toBe("prompt");
+		expect(decisionOf("command npm publish")).toBe("prompt");
+		expect(classifyBashReadOnly("command git push origin --force main")).toBe(false);
+		expect(classifyBashReadOnly("command gh repo delete owner/repo --yes")).toBe(false);
+	});
+
+	it("still catches a forbidden inner command through `command`", () => {
+		expect(decisionOf("command rm -rf /")).toBe("forbidden");
+		expect(decisionOf("command dd if=/dev/zero of=/dev/sda")).toBe("forbidden");
+	});
+
+	it("keeps legitimate read-only uses of `command` allowed", () => {
+		expect(decisionOf("command ls -la")).toBe("allow");
+		expect(decisionOf("command git status")).toBe("allow");
+		expect(decisionOf("command cat package.json")).toBe("allow");
+		expect(classifyBashReadOnly("command git status")).toBe(true);
+		expect(classifyBashReadOnly("command ls")).toBe(true);
+	});
+
+	it("treats the `-v`/`-V` query form as read-only (like `type`)", () => {
+		expect(decisionOf("command -v git")).toBe("allow");
+		expect(decisionOf("command -V node")).toBe("allow");
+		expect(classifyBashReadOnly("command -v git")).toBe(true);
+		// a `-v` AFTER the operand is the inner program's flag, not a query of `command`
+		expect(decisionOf("command git push -v")).toBe("prompt");
+	});
+
+	it("respects a privilege wrapper around `command`", () => {
+		expect(decisionOf("sudo command git push")).toBe("prompt");
+		expect(decisionOf("sudo command rm -rf /")).toBe("forbidden");
+	});
+
+	it("unwraps `command` reached through `sh -c`", () => {
+		expect(decisionOf("sh -c 'command git push --force'")).toBe("prompt");
+		expect(decisionOf("bash -c 'command rm -rf /'")).toBe("forbidden");
+	});
+});
+
 describe("seeded rules (runtime amend parity)", () => {
 	it("honors a seeded exact allow prefix", () => {
 		const seeded = new ExecPolicy();
