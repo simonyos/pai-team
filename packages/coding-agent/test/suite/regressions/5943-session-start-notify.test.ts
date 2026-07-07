@@ -59,6 +59,7 @@ type LoadedResourcesContext = {
 			getSkills: () => LoadedResourcesResult<{ skills: [] }>;
 			getPrompts: () => LoadedResourcesResult<{ prompts: [] }>;
 			getThemes: () => LoadedResourcesResult<{ themes: [] }>;
+			getAgentDefinitions: () => LoadedResourcesResult<{ agents: [] }>;
 			getExtensions: () => { extensions: []; errors: [] };
 		};
 		extensionRunner: {
@@ -231,6 +232,7 @@ function createLoadedResourcesContext(): LoadedResourcesContext {
 				getSkills: () => ({ skills: [], diagnostics: [] }),
 				getPrompts: () => ({ prompts: [], diagnostics: [] }),
 				getThemes: () => ({ themes: [], diagnostics: [] }),
+				getAgentDefinitions: () => ({ agents: [], diagnostics: [] }),
 				getExtensions: () => ({ extensions: [], errors: [] }),
 			},
 			extensionRunner: {

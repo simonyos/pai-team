@@ -1397,6 +1397,7 @@ export class InteractiveMode {
 		const skillsResult = this.session.resourceLoader.getSkills();
 		const promptsResult = this.session.resourceLoader.getPrompts();
 		const themesResult = this.session.resourceLoader.getThemes();
+		const agentDefinitionsResult = this.session.resourceLoader.getAgentDefinitions();
 		const extensions =
 			options?.extensions ??
 			this.session.resourceLoader.getExtensions().extensions.map((extension) => ({
@@ -1422,6 +1423,11 @@ export class InteractiveMode {
 		for (const loadedTheme of themesResult.themes) {
 			if (loadedTheme.sourcePath && loadedTheme.sourceInfo) {
 				sourceInfos.set(loadedTheme.sourcePath, loadedTheme.sourceInfo);
+			}
+		}
+		for (const agentDefinition of agentDefinitionsResult.agents) {
+			if (agentDefinition.sourceInfo) {
+				sourceInfos.set(agentDefinition.filePath, agentDefinition.sourceInfo);
 			}
 		}
 
@@ -1554,6 +1560,15 @@ export class InteractiveMode {
 				const warningLines = this.formatDiagnostics(themeDiagnostics, sourceInfos);
 				this.loadedResourcesContainer.addChild(
 					new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0),
+				);
+				this.loadedResourcesContainer.addChild(new Spacer(1));
+			}
+
+			const agentDefinitionDiagnostics = agentDefinitionsResult.diagnostics;
+			if (agentDefinitionDiagnostics.length > 0) {
+				const warningLines = this.formatDiagnostics(agentDefinitionDiagnostics, sourceInfos);
+				this.loadedResourcesContainer.addChild(
+					new Text(`${theme.fg("warning", "[Agent conflicts]")}\n${warningLines}`, 0, 0),
 				);
 				this.loadedResourcesContainer.addChild(new Spacer(1));
 			}

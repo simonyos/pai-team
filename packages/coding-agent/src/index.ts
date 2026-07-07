@@ -23,6 +23,15 @@ export {
 	parseSkillBlock,
 	type SessionStats,
 } from "./core/agent-session.ts";
+// Agent definitions (.pi/agents/*.md)
+export {
+	type AgentDefinition,
+	type AgentDefinitionFrontmatter,
+	type AgentDefinitionSource,
+	type LoadAgentDefinitionsOptions,
+	type LoadAgentDefinitionsResult,
+	loadAgentDefinitions,
+} from "./core/agents.ts";
 // Auth and model registry
 export {
 	type ApiKeyCredential,
