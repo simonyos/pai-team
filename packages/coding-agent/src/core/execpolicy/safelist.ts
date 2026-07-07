@@ -42,7 +42,6 @@ export const READ_ONLY_PROGRAMS: ReadonlySet<string> = new Set([
 	"basename",
 	"dirname",
 	"which",
-	"command",
 	"type",
 	"whereis",
 	"whatis",
@@ -293,6 +292,26 @@ export function isReadOnlySort(argv: readonly string[]): boolean {
 	return !argv.some((a) => a === "-o" || a === "--output" || a.startsWith("--output="));
 }
 
+/**
+ * The POSIX `command` builtin runs its operand while bypassing shell functions/aliases,
+ * so `command <program> <args…>` is only as safe as `<program> <args…>` itself (which
+ * policy.ts unwraps and classifies). Its `-v`/`-V` *query* forms merely describe a
+ * command (read-only, like `type`/`which`) and are the ONLY read-only shape. Options
+ * precede the operand, so we stop scanning at the first non-flag token — this keeps a
+ * later `-v` argument to the inner program (e.g. `command git -v`) from being mistaken
+ * for a query flag.
+ */
+export function commandIsQuery(argv: readonly string[]): boolean {
+	for (let k = 1; k < argv.length; k++) {
+		const a = argv[k];
+		if (a === "--") return false;
+		if (a === "-v" || a === "-V") return true;
+		if (a.startsWith("-")) continue;
+		return false;
+	}
+	return false;
+}
+
 const SPECIAL_READ_ONLY: Record<string, (argv: readonly string[]) => boolean> = {
 	find: isReadOnlyFind,
 	fd: isReadOnlyFd,
@@ -302,6 +321,7 @@ const SPECIAL_READ_ONLY: Record<string, (argv: readonly string[]) => boolean> = 
 	mawk: isReadOnlyAwk,
 	nawk: isReadOnlyAwk,
 	sort: isReadOnlySort,
+	command: commandIsQuery,
 };
 
 /** Programs that are read-only only under an argument-specific predicate. */

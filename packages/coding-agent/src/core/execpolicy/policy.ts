@@ -16,6 +16,7 @@
 import { type Decision, mostRestrictive } from "./decision.ts";
 import { matchPrefix, type PrefixRule, single } from "./rule.ts";
 import {
+	commandIsQuery,
 	detectForbidden,
 	PRIVILEGE_WRAPPERS,
 	READ_ONLY_PROGRAMS,
@@ -285,6 +286,15 @@ function unwrap(argv: readonly string[]): { inner: string[]; privileged: boolean
 		const program = cur[0];
 		if (PRIVILEGE_WRAPPERS.has(program)) {
 			privileged = true;
+			cur = stripWrapperFlags(cur.slice(1), program);
+			continue;
+		}
+		// The `command` builtin runs its operand while bypassing functions/aliases, so
+		// `command git push` is only as safe as `git push`: unwrap it like any other
+		// wrapper. Leave the `-v`/`-V` query form intact so programIsReadOnly (via
+		// commandIsQuery) classifies it read-only instead of demoting it to "prompt".
+		if (program === "command") {
+			if (commandIsQuery(cur)) break;
 			cur = stripWrapperFlags(cur.slice(1), program);
 			continue;
 		}
