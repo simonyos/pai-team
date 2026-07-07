@@ -26,7 +26,7 @@ import {
 	specialReadOnly,
 	WRAPPER_PROGRAMS,
 } from "./safelist.ts";
-import { type CommandSegment, parseCommandLine, type RedirectInfo } from "./tokenize.ts";
+import { type CommandSegment, extractSubstitutions, parseCommandLine, type RedirectInfo } from "./tokenize.ts";
 
 export interface ExecEval {
 	decision: Decision;
@@ -257,6 +257,42 @@ function gitReadOnly(argv: readonly string[]): boolean {
 	}
 }
 
+/**
+ * gh read-only classification. gh is two-level (`gh <resource> <action>`), so a
+ * flat verb set (as used for single-level tools) cannot tell `gh pr view` (read)
+ * from `gh pr merge` (write). `GH_WHOLE_READ` names resources that only read
+ * regardless of action; `GH_RESOURCE_READ_ACTIONS` names the read actions per
+ * resource. Anything unlisted falls through to "prompt" — over-restriction is safe.
+ * Replaces the earlier crude "resource token in a read set" handling, which also
+ * mis-classified `gh auth login`/`gh secret set` as read-only.
+ */
+const GH_WHOLE_READ: ReadonlySet<string> = new Set(["browse", "status", "search"]);
+const GH_RESOURCE_READ_ACTIONS: Record<string, ReadonlySet<string>> = {
+	pr: new Set(["view", "list", "diff", "checks", "status"]),
+	issue: new Set(["view", "list", "status"]),
+	run: new Set(["view", "list"]),
+	release: new Set(["view", "list"]),
+	repo: new Set(["view", "list"]),
+	workflow: new Set(["view", "list"]),
+	gist: new Set(["view", "list"]),
+	cache: new Set(["list"]),
+	label: new Set(["list"]),
+	ruleset: new Set(["view", "list", "check"]),
+	auth: new Set(["status"]),
+};
+
+/** Nuanced read-only classification for gh's two-level `gh <resource> <action>` shape. */
+function ghReadOnly(argv: readonly string[]): boolean {
+	const resource = subcommandVerb(argv, valueFlagsFor("gh"));
+	if (resource === undefined) return false;
+	if (GH_WHOLE_READ.has(resource)) return true;
+	const reads = GH_RESOURCE_READ_ACTIONS[resource];
+	if (reads === undefined) return false;
+	const resourceIdx = argv.indexOf(resource);
+	const action = argv.slice(resourceIdx + 1).find((a) => !a.startsWith("-"));
+	return action !== undefined && reads.has(action);
+}
+
 /** Does this single segment's program only read state? (Ignores redirects/substitution — caller handles those.) */
 function programIsReadOnly(argv: readonly string[]): boolean {
 	if (argv.length === 0) return false;
@@ -264,6 +300,7 @@ function programIsReadOnly(argv: readonly string[]): boolean {
 	const special = specialReadOnly(program, argv);
 	if (special !== undefined) return special;
 	if (program === "git") return gitReadOnly(argv);
+	if (program === "gh") return ghReadOnly(argv);
 	if (INTERPRETER_PROGRAMS.has(program)) return isVersionQuery(argv);
 	if (READ_ONLY_PROGRAMS.has(program)) return true;
 	if (SUBCOMMAND_TOOLS.has(program)) {
@@ -314,6 +351,28 @@ const WRAPPER_VALUE_FLAGS: Record<string, ReadonlySet<string>> = {
 	ionice: new Set(["-c", "--class", "-n", "--classdata", "-p", "--pid"]),
 	chrt: new Set(["-p"]),
 	stdbuf: new Set(["-i", "-o", "-e", "--input", "--output", "--error"]),
+	// Only xargs options that REQUIRE a separate value token are listed, so the
+	// scanner consumes `-I {}` / `-n 1` as flag+value and stops at the inner
+	// command. Glued forms (`-I{}`, `-n1`) and no-value flags (`-r`, `-0`, `-t`,
+	// `-p`, `--replace`, `-i`) fall through the generic leading-flag skip. Optional-
+	// argument flags are intentionally EXCLUDED: listing them could swallow the
+	// inner program (e.g. `--replace git push`) and under-report the invocation.
+	xargs: new Set([
+		"-I",
+		"-n",
+		"--max-args",
+		"-L",
+		"--max-lines",
+		"-P",
+		"--max-procs",
+		"-s",
+		"--max-chars",
+		"-d",
+		"--delimiter",
+		"-E",
+		"-a",
+		"--arg-file",
+	]),
 };
 
 /** Wrappers that take a leading positional operand (e.g. `timeout 5 cmd`). */
@@ -527,6 +586,94 @@ export class ExecPolicy {
 		}
 		return true;
 	}
+
+	/**
+	 * Does any segment of this command line invoke one of `programs` at the program
+	 * position? Used by the headless mutation gate to scope its default-deny to
+	 * git/gh; the mutating/read-only judgment stays with `isReadOnly` so there is no
+	 * second verb list. Detection unwraps privilege/wrapper prefixes (`sudo git …`,
+	 * `env git …`, `xargs git …`), normalizes `argv[0]` to a basename (so
+	 * `/usr/bin/git` and `./git` match `git`), and recurses into inline
+	 * `sh -c "git …"` strings AND every command/process substitution in the line
+	 * (`$(git …)`, `` `git …` ``, `<(git …)` — which the tokenizer keeps as opaque
+	 * literals). Errs toward OVER-reporting, which only tightens the gate.
+	 *
+	 * Known residual gaps (documented, not closed here): `find … -exec git … \;`
+	 * embeds the command mid-arguments rather than as a prefix, so unwrap cannot
+	 * reach it, and `find` classifies read-only unless it deletes/execs — closing it
+	 * needs matching logic in `isReadOnly` too, tracked separately. The `command`
+	 * builtin (`command git push`) is a distinct pre-existing systemic bypass tracked
+	 * in its own issue.
+	 */
+	invokesAnyProgram(command: string, programs: ReadonlySet<string>, depth = 0): boolean {
+		const parsed = parseCommandLine(command);
+		for (const seg of parsed.segments) {
+			const { inner } = unwrap(seg.argv);
+			if (inner.length > 0 && programs.has(programBasename(inner[0]))) return true;
+		}
+		if (depth >= SHELL_RECURSION_LIMIT) return false;
+		for (const seg of parsed.segments) {
+			const inline = extractShellInlineCommand(unwrap(seg.argv).inner);
+			if (inline !== undefined && this.invokesAnyProgram(inline, programs, depth + 1)) return true;
+		}
+		// Command/process substitutions hide invocations the tokenizer keeps as opaque
+		// literals; recurse into each one found across the raw line.
+		for (const sub of extractSubstitutions(command)) {
+			if (this.invokesAnyProgram(sub, programs, depth + 1)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Read-only test used by the headless mutation gate. Unlike the shared
+	 * `isReadOnly`, it does NOT blanket-reject a command merely because it contains a
+	 * substitution. It vets each top-level segment's program exactly as `isReadOnly`
+	 * does, then recurses into every command/process substitution (`$(…)`, `` `…` ``,
+	 * `<(…)`) and requires ITS content to be read-only too — the mirror of
+	 * `invokesAnyProgram`'s recursion. This lets a genuinely read-only git/gh
+	 * invocation reached through a substitution (`$(git rev-parse HEAD)`,
+	 * `TAG=$(git rev-parse HEAD)`, `$(gh pr view --json number)`) fall through the gate
+	 * rather than being hard-denied, while a mutating one (`$(git push)`) still fails.
+	 *
+	 * The shared `isReadOnly` keeps its coarse "any substitution ⇒ not read-only" rule
+	 * for its own plan-mode gating purpose; this is a separate, gate-scoped judgment.
+	 * Like `isReadOnly` it does NOT descend into `sh -c "…"` inline strings (a segment
+	 * whose program is a bare shell interpreter stays non-read-only), so a wrapped
+	 * mutation is never under-reported.
+	 */
+	isReadOnlyThroughSubstitutions(command: string, depth = 0): boolean {
+		const parsed = parseCommandLine(command);
+		if (parsed.parseError) return false;
+		if (parsed.segments.length === 0) return false;
+		for (const seg of parsed.segments) {
+			if (writesAnyFile(seg.redirects)) return false;
+			const { inner, privileged } = unwrap(seg.argv);
+			if (privileged) return false;
+			if (seg.pipedInto && inner.length > 0 && SHELL_INTERPRETERS.has(inner[0])) return false;
+			// A segment whose program word is itself a substitution (`$(git …)`, a backtick
+			// run, or an assignment like `TAG=$(git …)`) carries no vettable program at this
+			// level — its safety is decided by recursing into the substitution body below.
+			if (!wordIsSubstitution(inner[0]) && !programIsReadOnly(inner)) return false;
+		}
+		const subs = extractSubstitutions(command);
+		if (subs.length === 0) return true;
+		if (depth >= SHELL_RECURSION_LIMIT) return false;
+		for (const sub of subs) {
+			if (!this.isReadOnlyThroughSubstitutions(sub, depth + 1)) return false;
+		}
+		return true;
+	}
+}
+
+/** A word whose program position is (or embeds) a command substitution we must vet separately. */
+function wordIsSubstitution(word: string | undefined): boolean {
+	return word !== undefined && (word.includes("$(") || word.includes("`"));
+}
+
+/** Final path component of a program word, so `/usr/bin/git` and `./git` match `git`. */
+function programBasename(program: string): string {
+	const cut = program.lastIndexOf("/");
+	return cut >= 0 ? program.slice(cut + 1) : program;
 }
 
 function writesAnyFile(redirects: readonly RedirectInfo[]): boolean {

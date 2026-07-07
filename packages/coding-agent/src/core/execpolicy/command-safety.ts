@@ -27,6 +27,39 @@ export function classifyBashReadOnly(command: string, policy: ExecPolicy = defau
 	return policy.isReadOnly(command);
 }
 
+/** Programs whose mutating invocations the headless mutation gate default-denies. */
+const GIT_GH_PROGRAMS: ReadonlySet<string> = new Set(["git", "gh"]);
+
+/**
+ * Is this bash command a MUTATING git or gh invocation? True when the command names
+ * git or gh as a program in any segment AND is not classified read-only. Drives the
+ * headless mutation gate (G0b): when no interactive approval is possible, a
+ * state-changing git/gh command (e.g. `git push`, `gh pr merge`) with no explicit
+ * allow rule is denied rather than silently allowed. Reuses `classifyBashReadOnly`
+ * as the single source of truth for "mutating" — no second verb list. Coarse by
+ * design: a compound command mixing git/gh with another mutation
+ * (`git status && rm foo`) is also treated as mutating, which only tightens the gate.
+ *
+ * Detection (see `ExecPolicy.invokesAnyProgram`) unwraps wrapper prefixes including
+ * `xargs`, normalizes path forms (`/usr/bin/git`, `./git`) to a basename, and
+ * recurses into `sh -c "…"` strings and command/process substitution (`$(…)`,
+ * backticks, `<(…)`) — closing the command-substitution, path-based, and xargs
+ * bypasses. Residual known gaps not closed here: `find … -exec git … \;` and the
+ * `command git push` builtin (a separate pre-existing systemic bypass tracked in
+ * its own issue).
+ *
+ * The read-only side uses `isReadOnlyThroughSubstitutions`, NOT the coarse shared
+ * `isReadOnly`: the latter blanket-declares any command containing a substitution
+ * "not read-only", which — combined with `invokesAnyProgram` reaching git/gh inside
+ * substitutions — would mis-flag genuinely read-only reads like `$(git rev-parse
+ * HEAD)` or `$(gh pr view --json number)` as mutating and hard-deny them. The
+ * substitution-aware check vets the substitution's own content instead.
+ */
+export function classifyBashGitOrGhMutation(command: string, policy: ExecPolicy = defaultExecPolicy): boolean {
+	if (!policy.invokesAnyProgram(command, GIT_GH_PROGRAMS)) return false;
+	return !policy.isReadOnlyThroughSubstitutions(command);
+}
+
 /** Decide whether a bash command may run, asking or blocking per the command-safety policy. */
 export function checkBashPermission(command: string, policy: ExecPolicy = defaultExecPolicy): PermissionResult {
 	const evaluation = policy.check(command);
