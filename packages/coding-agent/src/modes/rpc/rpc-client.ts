@@ -422,12 +422,33 @@ export class RpcClient {
 	/**
 	 * Invoke the `ping_builtin` coded command (a permanent no-op reference).
 	 *
-	 * REGISTRATION POINT: to issue a future first-class command from a client
-	 * (e.g. Wave 2.2 G4/G5 /commit, /branch), add a method here that sends the
-	 * new RpcCommand shape, mirroring this one.
+	 * REGISTRATION POINT: to issue a future first-class command from a client,
+	 * add a method here that sends the new RpcCommand shape, mirroring this one.
 	 */
 	async pingBuiltin(): Promise<{ pong: true }> {
 		const response = await this.send({ type: "ping_builtin" });
+		return this.getData(response);
+	}
+
+	/**
+	 * Invoke the `/commit` coded command: refuses (throws) on transient git
+	 * state, nothing to commit, or a likely secret in the staged diff (pass
+	 * `args` containing `--allow-secrets` to override the latter); otherwise
+	 * sends a Git-Safety-Protocol-primed prompt to the model.
+	 */
+	async commit(args?: string): Promise<{ sent: true }> {
+		const response = await this.send({ type: "commit", args });
+		return this.getData(response);
+	}
+
+	/**
+	 * Invoke the `/branch` coded command with a free-text description of what
+	 * the branch is for (e.g. "fix the login bug"). Refuses (throws) on
+	 * transient git state or an empty/blank description; otherwise sends a
+	 * Git-Safety-Protocol-primed prompt to the model.
+	 */
+	async branch(args: string): Promise<{ sent: true }> {
+		const response = await this.send({ type: "branch", args });
 		return this.getData(response);
 	}
 
