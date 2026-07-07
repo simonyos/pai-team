@@ -69,11 +69,11 @@ Original G1 spec:
 - **Safety rails on every read:** `--no-optional-locks`, `-c core.hooksPath=/dev/null`, **`-c core.fsmonitor=false`** (⇐ critic: Codex fsmonitor supply-chain rail — a hostile `.git/config` `core.fsmonitor=<binary>` runs during `git status`), read-only assertion, `redactSecrets`, `getShellEnv` cred withholding
 - **Tests:** worktree `.git`-file gitdir pointer; porcelain parsing (staged/unstaged/untracked/ahead-behind/rename/unmerged); default-branch order; `runGitRead` throws on mutating verb; validate allow/reject table; secret-flag on `.env` line; footer branch regression; **fsmonitor-hostile repo does not execute during getStatus/getDiff**
 
-### G3 — attribution + safety text (blocks G2/G4)
-- **New:** `core/git/{attribution,git-safety-prompt}.ts`, `test/git-attribution.test.ts`
-- **Touch:** `settings-manager.ts` (add `getAttributionSetting()` mirroring `getPermissionRules`), `system-prompt.ts` (S5 behavioral-policy section), `src/index.ts`
-- **Surface:** `getAttributionTexts(settings,input)` (single overridable/suppressible source), `sanitizeModelName`, `GIT_SAFETY_PROTOCOL` const, `buildGitSafetySection()`
-- Depends on **Decision D5** (attribution identity) — must be settled before this lands in real commits
+### G3 — Git Safety Protocol text (blocks G2/G4) — **scope shrunk per D5/D7: no attribution module in v1**
+- **New:** `core/git/git-safety-prompt.ts`, `test/git-safety-prompt.test.ts`
+- **Touch:** `system-prompt.ts` (S5-style behavioral-policy section), `src/index.ts`
+- **Surface:** `GIT_SAFETY_PROTOCOL` const, `buildGitSafetySection()`
+- ~~`core/git/attribution.ts`, `getAttributionTexts`, `sanitizeModelName`, `getAttributionSetting()`~~ — **cut**, see D5/D7 decision above. No `Co-Authored-By` trailer, no PR footer, in v1.
 
 ### G2 — structured `git` tool (opt-in, off critical path)
 - **New:** `core/tools/git.ts`, `test/git-tool.test.ts`; **Touch:** `tools/index.ts` (5 sites: `ToolName`, `allToolNames`, `ToolsOptions.git`, the 3 switches), `src/index.ts`
@@ -84,11 +84,11 @@ Original G1 spec:
 - Keep OUT of `defaultActiveToolNames` (both `agent-session.ts` ~2576 and `sdk.ts:280`).
 
 ### G4 — `/commit` + `/branch` (needs G0, G1, G3)
-- Handlers read pre-flight state (L0), **refuse** on transient/empty/secret (secret = refuse, not warn, unless explicit override — the prompt can't force stage-by-name), compose primed prompt = `GIT_SAFETY_PROTOCOL` + real diff + attribution trailer, inject via `ctx.sendUserMessage`.
+- Handlers read pre-flight state (L0), **refuse** on transient/empty/secret (secret = refuse, not warn, unless explicit override — the prompt can't force stage-by-name), compose primed prompt = `GIT_SAFETY_PROTOCOL` + real diff (no attribution trailer — cut per D5), inject via `ctx.sendUserMessage`.
 - **Critic: encode the pre-commit-hook-failure recovery loop** (hook fails → fix root cause → re-stage → **new** commit, never `--amend`, because a hook-failed commit never happened) into the commit prompt, and confirm the commit path **never** sets `core.hooksPath=/dev/null` (commit hooks must run; only reads neutralize hooks).
 
 ### G5 — `/commit-push-pr` (needs G4)
-- branch → commit → push → `gh pr create`, idempotent (detect existing PR/branch).
+- branch → commit → push → `gh pr create`, idempotent (detect existing PR/branch). PR body is plain — no "🤖 Generated with…" footer (cut per D7).
 - **Critic:** explicit `gh` **not-installed** and **unauthenticated** (`gh auth status`) preflight, degrading to a clear distinct error (≠ "no PR"); force non-interactive (`GH_PROMPT_DISABLED`, `GIT_TERMINAL_PROMPT=0`); optional `--reviewer` passthrough for parity. Resolve a linked worktree back to its main repo before branch/default-branch resolution.
 
 ---
@@ -100,9 +100,9 @@ Original G1 spec:
 - **D2 — Git tool schema:** structured (`subcommand`+`args[]`) vs single `command` string. *Recommend structured* (shell-free is the point).
 - **D3 — Activate git tool by default?** *Recommend opt-in only* (register, don't activate; bash already covers git).
 - **D4 — Hook policy asymmetry:** reads neutralize hooks (supply-chain rail); commit path runs hooks normally, never `--amend`. *Recommend confirm asymmetry.*
-- **D5 — Attribution identity (blocks G3, bakes into user commit history):** exact `Co-Authored-By` name + email, PR-footer product name/URL (`APP_NAME`→`pi`), model-display source + `sanitizeModelName` map.
+- **D5 — Attribution identity — DECIDED 2026-07-07:** **no `Co-Authored-By` trailer at all in v1.** Owner rejected both a personal email and a "Claude Code"-branded identity — no default exists yet for a `pi`-branded noreply address, so v1 ships with **zero commit-trailer attribution**. `core/git/attribution.ts` is **not built** in G3; nothing calls it. Revisit if/when the project has its own domain/noreply identity.
 - **D6 — fetch/pull + gh read scope:** execpolicy marks `fetch`/`pull` mutating (prompt). Accept prompt, or seed a project allow? Seed a read-only allow for `gh pr view:*` while `gh create/edit` still prompt?
-- **D7 — v1 scope:** exclude the per-edit contribution-% PR footer and fork-parent PR discovery? *Recommend defer* (v1 = self-contained `Co-Authored-By` + `🤖 Generated with` ≈ 90% of value).
+- **D7 — v1 scope — DECIDED 2026-07-07:** **no PR footer at all** (stronger than "defer contribution-%" — full opt-out, not just the per-edit variant). `/commit-push-pr` (G5) creates a plain PR body with no "🤖 Generated with…" line and no Claude Code branding.
 
 ---
 
