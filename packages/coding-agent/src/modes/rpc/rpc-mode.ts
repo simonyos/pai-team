@@ -21,6 +21,7 @@ import type {
 } from "../../core/extensions/index.ts";
 import { buildBranchCommand } from "../../core/git/branch-command.ts";
 import { buildCommitCommand } from "../../core/git/commit-command.ts";
+import { buildCommitPushPrCommand } from "../../core/git/commit-push-pr-command.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
@@ -700,6 +701,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 				await session.sendUserMessage(result.text);
 				return success(id, "branch", { sent: true });
+			}
+
+			case "commit_push_pr": {
+				const result = await buildCommitPushPrCommand(session.sessionManager.getCwd(), command.args ?? "");
+				if (result.kind === "refuse") {
+					return error(id, "commit_push_pr", result.message);
+				}
+				await session.sendUserMessage(result.text);
+				return success(id, "commit_push_pr", { sent: true });
 			}
 
 			default: {

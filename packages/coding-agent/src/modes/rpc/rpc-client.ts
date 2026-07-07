@@ -452,6 +452,19 @@ export class RpcClient {
 		return this.getData(response);
 	}
 
+	/**
+	 * Invoke the `/commit-push-pr` coded command: commit the current changes, push
+	 * the branch, and open a pull request. Refuses (throws) when `gh` is missing or
+	 * unauthenticated, on any `/commit` precondition failure, when on the default
+	 * branch, or when an open PR already exists for the branch. `args` may carry an
+	 * optional `--reviewer <name>`, `--allow-secrets`, and a free-text PR title/hint.
+	 * Otherwise sends a Git-Safety-Protocol-primed prompt to the model.
+	 */
+	async commitPushPr(args?: string): Promise<{ sent: true }> {
+		const response = await this.send({ type: "commit_push_pr", args });
+		return this.getData(response);
+	}
+
 	// =========================================================================
 	// Helpers
 	// =========================================================================

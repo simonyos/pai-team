@@ -11,6 +11,7 @@ import type { AgentSession } from "../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { buildBranchCommand } from "../core/git/branch-command.ts";
 import { buildCommitCommand } from "../core/git/commit-command.ts";
+import { buildCommitPushPrCommand } from "../core/git/commit-push-pr-command.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 
@@ -37,7 +38,7 @@ export interface PrintModeOptions {
  */
 async function reportCodedGitCommandResult(
 	mode: "text" | "json",
-	command: "commit" | "branch",
+	command: "commit" | "branch" | "commit-push-pr",
 	result: { kind: "refuse"; message: string } | { kind: "prompt"; text: string },
 	session: AgentSession,
 ): Promise<void> {
@@ -82,6 +83,13 @@ async function handleCodedCommand(message: string, mode: "text" | "json", sessio
 		} else {
 			writeRawStdout("pong\n");
 		}
+		return true;
+	}
+
+	if (trimmed === "/commit-push-pr" || trimmed.startsWith("/commit-push-pr ")) {
+		const args = trimmed.startsWith("/commit-push-pr ") ? trimmed.slice("/commit-push-pr ".length).trim() : "";
+		const result = await buildCommitPushPrCommand(session.sessionManager.getCwd(), args);
+		await reportCodedGitCommandResult(mode, "commit-push-pr", result, session);
 		return true;
 	}
 

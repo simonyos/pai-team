@@ -37,6 +37,10 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "compact", description: "Manually compact the session context" },
 	{ name: "commit", description: "Ask the model to review and commit the current changes" },
 	{ name: "branch", description: "Ask the model to create a new branch for a stated purpose" },
+	{
+		name: "commit-push-pr",
+		description: "Ask the model to commit, push the branch, and open a pull request",
+	},
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
 	{ name: "quit", description: `Quit ${APP_NAME}` },

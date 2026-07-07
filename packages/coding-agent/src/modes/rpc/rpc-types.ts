@@ -76,7 +76,8 @@ export type RpcCommand =
 	// reference command that exercises this path end-to-end.
 	| { id?: string; type: "ping_builtin" }
 	| { id?: string; type: "commit"; args?: string }
-	| { id?: string; type: "branch"; args: string };
+	| { id?: string; type: "branch"; args: string }
+	| { id?: string; type: "commit_push_pr"; args?: string };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -216,6 +217,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "ping_builtin"; success: true; data: { pong: true } }
 	| { id?: string; type: "response"; command: "commit"; success: true; data: { sent: true } }
 	| { id?: string; type: "response"; command: "branch"; success: true; data: { sent: true } }
+	| { id?: string; type: "response"; command: "commit_push_pr"; success: true; data: { sent: true } }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

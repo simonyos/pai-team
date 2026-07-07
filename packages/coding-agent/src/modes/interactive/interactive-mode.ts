@@ -76,6 +76,7 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { buildBranchCommand } from "../../core/git/branch-command.ts";
 import { buildCommitCommand } from "../../core/git/commit-command.ts";
+import { buildCommitPushPrCommand } from "../../core/git/commit-push-pr-command.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { createCompactionSummaryMessage } from "../../core/messages.ts";
@@ -2855,6 +2856,19 @@ export class InteractiveMode {
 					const args = text.startsWith("/branch ") ? text.slice("/branch ".length).trim() : "";
 					this.editor.setText("");
 					const result = await buildBranchCommand(this.sessionManager.getCwd(), args);
+					if (result.kind === "refuse") {
+						this.showStatus(result.message);
+						return;
+					}
+					await this.session.sendUserMessage(result.text);
+				},
+			},
+			{
+				match: matchesExactOrArg("/commit-push-pr"),
+				run: async (text) => {
+					const args = text.startsWith("/commit-push-pr ") ? text.slice("/commit-push-pr ".length).trim() : "";
+					this.editor.setText("");
+					const result = await buildCommitPushPrCommand(this.sessionManager.getCwd(), args);
 					if (result.kind === "refuse") {
 						this.showStatus(result.message);
 						return;
