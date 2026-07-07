@@ -147,6 +147,7 @@ export async function createAgentSessionServices(
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, join(agentDir, "models.json"));
 	const resourceLoader = new DefaultResourceLoader({
+		getKnownModels: () => modelRegistry.getAll(),
 		...(options.resourceLoaderOptions ?? {}),
 		cwd,
 		agentDir,

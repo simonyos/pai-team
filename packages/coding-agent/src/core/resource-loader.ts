@@ -1,8 +1,10 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
+import { type AgentDefinition, loadAgentDefinitions } from "./agents.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.ts";
@@ -40,6 +42,7 @@ export interface ResourceLoader {
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
+	getAgentDefinitions(): { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
@@ -155,6 +158,12 @@ export interface DefaultResourceLoaderOptions {
 	agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
 		agentsFiles: Array<{ path: string; content: string }>;
 	};
+	agentDefinitionsOverride?: (base: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] }) => {
+		agents: AgentDefinition[];
+		diagnostics: ResourceDiagnostic[];
+	};
+	/** Source of known models used to validate agent-definition `model` fields (warn-but-keep). */
+	getKnownModels?: () => Model<Api>[];
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
 	appendSystemPromptOverride?: (base: string[]) => string[];
 }
@@ -193,6 +202,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
 		agentsFiles: Array<{ path: string; content: string }>;
 	};
+	private agentDefinitionsOverride?: (base: { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] }) => {
+		agents: AgentDefinition[];
+		diagnostics: ResourceDiagnostic[];
+	};
+	private getKnownModels?: () => Model<Api>[];
 	private systemPromptOverride?: (base: string | undefined) => string | undefined;
 	private appendSystemPromptOverride?: (base: string[]) => string[];
 
@@ -203,6 +217,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private promptDiagnostics: ResourceDiagnostic[];
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
+	private agentDefinitions: AgentDefinition[];
+	private agentDefinitionDiagnostics: ResourceDiagnostic[];
 	private agentsFiles: Array<{ path: string; content: string }>;
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
@@ -241,6 +257,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.promptsOverride = options.promptsOverride;
 		this.themesOverride = options.themesOverride;
 		this.agentsFilesOverride = options.agentsFilesOverride;
+		this.agentDefinitionsOverride = options.agentDefinitionsOverride;
+		this.getKnownModels = options.getKnownModels;
 		this.systemPromptOverride = options.systemPromptOverride;
 		this.appendSystemPromptOverride = options.appendSystemPromptOverride;
 
@@ -251,6 +269,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.promptDiagnostics = [];
 		this.themes = [];
 		this.themeDiagnostics = [];
+		this.agentDefinitions = [];
+		this.agentDefinitionDiagnostics = [];
 		this.agentsFiles = [];
 		this.appendSystemPrompt = [];
 		this.lastSkillPaths = [];
@@ -276,6 +296,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
 		return { themes: this.themes, diagnostics: this.themeDiagnostics };
+	}
+
+	getAgentDefinitions(): { agents: AgentDefinition[]; diagnostics: ResourceDiagnostic[] } {
+		return { agents: this.agentDefinitions, diagnostics: this.agentDefinitionDiagnostics };
 	}
 
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {
@@ -462,6 +486,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: resolved });
 			}
 		}
+
+		this.updateAgentDefinitions();
 
 		const agentsFiles = {
 			agentsFiles: this.noContextFiles
@@ -682,6 +708,17 @@ export class DefaultResourceLoader implements ResourceLoader {
 			return theme;
 		});
 		this.themeDiagnostics = resolvedThemes.diagnostics;
+	}
+
+	private updateAgentDefinitions(): void {
+		const base = loadAgentDefinitions({
+			cwd: this.cwd,
+			agentDir: this.agentDir,
+			knownModels: this.getKnownModels?.(),
+		});
+		const resolved = this.agentDefinitionsOverride ? this.agentDefinitionsOverride(base) : base;
+		this.agentDefinitions = resolved.agents;
+		this.agentDefinitionDiagnostics = resolved.diagnostics;
 	}
 
 	private applyExtensionSourceInfo(extensions: Extension[], metadataByPath: Map<string, PathMetadata>): void {

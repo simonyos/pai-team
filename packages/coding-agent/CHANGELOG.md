@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added declarative agent definitions loaded from `.pi/agents/*.md` (frontmatter `name`/`description`/`tools`/`model`, body as system prompt), exposed via `loadAgentDefinitions()` and `ResourceLoader.getAgentDefinitions()`. Discovery, validation, and a typed registry only; unknown tools/models warn but are kept, and project definitions override user ones. Load diagnostics surface as `[Agent conflicts]` in interactive mode.
+
 ### Fixed
 
 - Fixed `--session` and `SessionManager.open()` to reject non-empty invalid session files without overwriting them ([#6002](https://github.com/earendil-works/pi/issues/6002)).

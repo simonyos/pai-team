@@ -468,6 +468,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 					getPrompts: () => ({ prompts: [], diagnostics: [] }),
 					getExtensions: () => ({ extensions: options.extensions ?? [], errors: [], runtime: {} }),
 					getThemes: () => ({ themes: [], diagnostics: [] }),
+					getAgentDefinitions: () => ({ agents: [], diagnostics: [] }),
 				},
 			},
 			formatDisplayPath: (p: string) => (InteractiveMode as any).prototype.formatDisplayPath.call(fakeThis, p),
