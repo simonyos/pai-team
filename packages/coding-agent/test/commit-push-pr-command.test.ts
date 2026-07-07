@@ -201,6 +201,31 @@ describe("buildCommitPushPrCommand", () => {
 		}
 	});
 
+	it("refuses (fails closed, not open) when `gh pr list` itself fails, to avoid risking a duplicate PR", async () => {
+		ghFixture.prList = { status: 1, stdout: "", stderr: "gh: network error" };
+		const dir = makeFeatureRepoWithChange();
+
+		const result = await buildCommitPushPrCommand(dir, "");
+		expect(result.kind).toBe("refuse");
+		if (result.kind === "refuse") {
+			expect(result.message).toContain("Could not confirm");
+			// Distinct from the "found" case's message — no PR URL/number is asserted,
+			// since none was actually confirmed to exist.
+			expect(result.message).not.toMatch(/https:\/\/github\.com|#\d+/);
+		}
+	});
+
+	it("refuses when `gh pr list` returns output that cannot be parsed as JSON", async () => {
+		ghFixture.prList = { status: 0, stdout: "not json", stderr: "" };
+		const dir = makeFeatureRepoWithChange();
+
+		const result = await buildCommitPushPrCommand(dir, "");
+		expect(result.kind).toBe("refuse");
+		if (result.kind === "refuse") {
+			expect(result.message).toContain("Could not confirm");
+		}
+	});
+
 	it("composes a safety-protocol-primed prompt with the required PR-create guidance when not refused", async () => {
 		const dir = makeFeatureRepoWithChange();
 

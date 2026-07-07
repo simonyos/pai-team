@@ -91,19 +91,29 @@ function checkGhAvailable(cwd: string): { kind: "refuse"; message: string } | nu
 	return null;
 }
 
-/** An already-open PR whose head is `branch`, via a live `gh pr list` read, or null. */
-function findExistingOpenPr(cwd: string, branch: string): { url: string; number: number } | null {
+/**
+ * Result of checking for an already-open PR whose head is `branch`, via a live
+ * `gh pr list` read. Distinguishes "confirmed none" from "couldn't determine" —
+ * a read failure (network blip, transient `gh`/API error) must NOT be treated as
+ * "no PR exists," since that would let the flow proceed to open a duplicate PR.
+ */
+type ExistingPrLookup = { status: "found"; url: string; number: number } | { status: "none" } | { status: "error" };
+
+function findExistingOpenPr(cwd: string, branch: string): ExistingPrLookup {
 	const result = spawnSync("gh", ["pr", "list", "--head", branch, "--state", "open", "--json", "url,number"], {
 		cwd,
 		encoding: "utf-8",
 		env: NON_INTERACTIVE_ENV,
 	});
-	if (result.status !== 0 || !result.stdout.trim()) return null;
+	if (result.error || result.status !== 0) return { status: "error" };
+	const trimmed = result.stdout.trim();
+	if (!trimmed) return { status: "none" };
 	try {
-		const parsed = JSON.parse(result.stdout) as Array<{ url: string; number: number }>;
-		return Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null;
+		const parsed = JSON.parse(trimmed) as Array<{ url: string; number: number }>;
+		if (!Array.isArray(parsed) || parsed.length === 0) return { status: "none" };
+		return { status: "found", url: parsed[0].url, number: parsed[0].number };
 	} catch {
-		return null;
+		return { status: "error" };
 	}
 }
 
@@ -150,10 +160,16 @@ export async function buildCommitPushPrCommand(cwd: string, args: string): Promi
 
 	if (currentBranch) {
 		const existingPr = findExistingOpenPr(repoRoot, currentBranch);
-		if (existingPr) {
+		if (existingPr.status === "found") {
 			return {
 				kind: "refuse",
 				message: `An open pull request already exists for branch ${currentBranch}: ${existingPr.url} (#${existingPr.number}). Push new commits to update it rather than opening another.`,
+			};
+		}
+		if (existingPr.status === "error") {
+			return {
+				kind: "refuse",
+				message: `Could not confirm whether a pull request already exists for branch ${currentBranch} (\`gh pr list\` failed). Try /commit-push-pr again once that succeeds, to avoid opening a duplicate PR.`,
 			};
 		}
 	}
