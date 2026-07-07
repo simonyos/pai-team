@@ -77,6 +77,21 @@ describe("web_fetch SSRF defense", () => {
 		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 
+	it("rejects loopback hosts written with a trailing FQDN root dot", async () => {
+		const fetchSpy = vi.fn();
+		const lookupSpy = vi.fn();
+		// "localhost." and "127.0.0.1." resolve the same as without the dot — the trailing
+		// root label must not slip past the loopback / literal-IP fast paths (no DNS lookup).
+		await expect(run("http://localhost./", { fetchImpl: fetchSpy, lookupImpl: lookupSpy })).rejects.toThrow(
+			/loopback/i,
+		);
+		await expect(run("http://127.0.0.1./", { fetchImpl: fetchSpy, lookupImpl: lookupSpy })).rejects.toThrow(
+			/private|loopback/i,
+		);
+		expect(lookupSpy).not.toHaveBeenCalled();
+		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
 	it("rejects literal link-local, private and unspecified addresses", async () => {
 		const hosts = [
 			"http://169.254.169.254/latest/meta-data/",
@@ -176,6 +191,21 @@ describe("web_fetch content extraction", () => {
 		expect(text).toContain("Tom & Jerry <3 'quotes' A");
 		expect(text).toContain("line one");
 		expect(text).toContain("line two");
+	});
+
+	it("strips script/style blocks whose closing tag has whitespace before '>'", async () => {
+		// HTML5 permits whitespace/newline before ">" in a closing tag; the block (not just
+		// the tags) must still be removed so inline JS/CSS never leaks into the output.
+		const html = `<html><body><p>Visible</p><script>SECRET_JS_LEAK()</script >
+			<style>.a{color:red}</style\n><p>After</p></body></html>`;
+		const result = await run("http://public.example.com/", {
+			fetchImpl: async () => new Response(html, { headers: { "content-type": "text/html" } }),
+		});
+		const text = textOf(result);
+		expect(text).not.toMatch(/SECRET_JS_LEAK/);
+		expect(text).not.toMatch(/color:red/);
+		expect(text).toContain("Visible");
+		expect(text).toContain("After");
 	});
 
 	it("passes non-HTML text content through unchanged", async () => {

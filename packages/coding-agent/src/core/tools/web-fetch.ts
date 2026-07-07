@@ -109,12 +109,15 @@ function isBlockedAddress(ip: string): boolean {
 	return false;
 }
 
-/** Normalize a URL hostname: strip IPv6 brackets and lowercase. */
+/** Normalize a URL hostname: strip IPv6 brackets, lowercase, and drop a trailing FQDN root dot. */
 function normalizeHostname(hostname: string): string {
 	let host = hostname.toLowerCase();
 	if (host.startsWith("[") && host.endsWith("]")) {
 		host = host.slice(1, -1);
 	}
+	// A trailing "." is the DNS root label ("localhost." / "127.0.0.1." resolve the same
+	// as without it). Strip it so it can't slip past the loopback / literal-IP checks below.
+	host = host.replace(/\.+$/, "");
 	return host;
 }
 
@@ -122,6 +125,16 @@ function normalizeHostname(hostname: string): string {
  * Validate a URL for fetching: enforce http(s) scheme, reject literal
  * private/loopback/link-local hosts, and resolve DNS names rejecting any that
  * point at a blocked address. Throws with a clear message on rejection.
+ *
+ * Residual (documented, deferred): this resolves the hostname to validate it, but
+ * the subsequent fetch re-resolves the name independently, so a rebinding DNS
+ * server with a short TTL could answer "public" here and "private" at connect time
+ * (a classic resolve-then-connect TOCTOU). Fully closing it means pinning the
+ * validated IP into the connection via a per-request undici dispatcher — which would
+ * bypass the configured EnvHttpProxyAgent (core/http-dispatcher.ts) for proxy users,
+ * so it needs proxy-aware handling and is left as a follow-up. Mitigations already in
+ * place: web_fetch is not auto-allowed (an un-ruled call resolves to "ask"), and the
+ * enumerated literal / DNS-resolves-to-private / redirect cases are all covered.
  */
 async function assertUrlAllowed(url: URL, lookup: WebFetchOperations["lookup"]): Promise<void> {
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
@@ -189,9 +202,11 @@ function decodeEntities(input: string): string {
 /** Convert an HTML document to readable plain text without any external dependency. */
 function htmlToText(html: string): string {
 	let text = html;
-	// Drop non-content blocks entirely.
-	text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ");
-	text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+	// Drop non-content blocks entirely. The closing tag may carry whitespace before ">"
+	// (HTML5 allows "</script >" / "</style\n>"); \s* ensures the whole block — not just
+	// the tags — is removed, so inline JS/CSS text never leaks into the extracted output.
+	text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, " ");
+	text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ");
 	text = text.replace(/<!--[\s\S]*?-->/g, " ");
 	// Turn block-level boundaries and line breaks into newlines.
 	text = text.replace(/<(?:br|hr)\s*\/?>/gi, "\n");
