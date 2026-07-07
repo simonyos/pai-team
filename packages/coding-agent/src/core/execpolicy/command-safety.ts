@@ -47,10 +47,17 @@ const GIT_GH_PROGRAMS: ReadonlySet<string> = new Set(["git", "gh"]);
  * bypasses. Residual known gaps not closed here: `find … -exec git … \;` and the
  * `command git push` builtin (a separate pre-existing systemic bypass tracked in
  * its own issue).
+ *
+ * The read-only side uses `isReadOnlyThroughSubstitutions`, NOT the coarse shared
+ * `isReadOnly`: the latter blanket-declares any command containing a substitution
+ * "not read-only", which — combined with `invokesAnyProgram` reaching git/gh inside
+ * substitutions — would mis-flag genuinely read-only reads like `$(git rev-parse
+ * HEAD)` or `$(gh pr view --json number)` as mutating and hard-deny them. The
+ * substitution-aware check vets the substitution's own content instead.
  */
 export function classifyBashGitOrGhMutation(command: string, policy: ExecPolicy = defaultExecPolicy): boolean {
 	if (!policy.invokesAnyProgram(command, GIT_GH_PROGRAMS)) return false;
-	return !policy.isReadOnly(command);
+	return !policy.isReadOnlyThroughSubstitutions(command);
 }
 
 /** Decide whether a bash command may run, asking or blocking per the command-safety policy. */

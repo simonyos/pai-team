@@ -391,6 +391,59 @@ describe("classifyBashGitOrGhMutation (headless mutation gate scope)", () => {
 	it("treats a compound command mixing git with another mutation as mutating", () => {
 		expect(classifyBashGitOrGhMutation("git status && rm -rf build")).toBe(true);
 	});
+
+	// Regression (XZI-11): a read-only git/gh invocation reached through a
+	// substitution must NOT be flagged as mutating. The XZI-10 round made
+	// `invokesAnyProgram` look inside `$(…)`/backticks/`<(…)`, but the read-only side
+	// still used the coarse `isReadOnly`, whose blanket "any substitution ⇒ not
+	// read-only" rule mis-classified pure reads like `$(git rev-parse HEAD)` as
+	// mutating and hard-denied them in headless mode.
+	it("does not flag read-only git/gh reached through a substitution", () => {
+		expect(classifyBashGitOrGhMutation("$(git rev-parse HEAD)")).toBe(false);
+		expect(classifyBashGitOrGhMutation("TAG=$(git rev-parse HEAD)")).toBe(false);
+		expect(classifyBashGitOrGhMutation("$(gh pr view --json number)")).toBe(false);
+		expect(classifyBashGitOrGhMutation("`git rev-parse HEAD`")).toBe(false);
+		expect(classifyBashGitOrGhMutation("`git status`")).toBe(false);
+		expect(classifyBashGitOrGhMutation("diff <(git show HEAD:a) <(git show HEAD:b)")).toBe(false);
+		expect(classifyBashGitOrGhMutation("echo $(git status)")).toBe(false);
+	});
+
+	// The other direction must survive: a mutating git/gh wrapped in the same
+	// substitution forms is still flagged (the original XZI-10 gate must not regress).
+	it("still flags a mutating git/gh reached through a substitution", () => {
+		expect(classifyBashGitOrGhMutation("$(git push origin main)")).toBe(true);
+		expect(classifyBashGitOrGhMutation("TAG=$(git push)")).toBe(true);
+		expect(classifyBashGitOrGhMutation("`git push`")).toBe(true);
+		expect(classifyBashGitOrGhMutation("$(gh pr merge 123)")).toBe(true);
+		expect(classifyBashGitOrGhMutation("$(git push) && ls")).toBe(true);
+	});
+});
+
+describe("gh two-level read-only classification", () => {
+	// gh is `gh <resource> <action>`; a flat verb set cannot tell `gh pr view` (read)
+	// from `gh pr merge` (write). These reads must classify allow / not-mutating.
+	it("recognizes gh read actions as read-only", () => {
+		expect(decisionOf("gh pr view 123")).toBe("allow");
+		expect(decisionOf("gh pr list")).toBe("allow");
+		expect(decisionOf("gh pr diff 5")).toBe("allow");
+		expect(decisionOf("gh issue view 9")).toBe("allow");
+		expect(decisionOf("gh run list")).toBe("allow");
+		expect(decisionOf("gh -R owner/repo pr view 1")).toBe("allow");
+		expect(classifyBashReadOnly("gh pr view --json number")).toBe(true);
+		expect(classifyBashReadOnly("gh auth status")).toBe(true);
+		expect(classifyBashReadOnly("gh browse")).toBe(true);
+	});
+
+	it("keeps gh write actions mutating", () => {
+		expect(decisionOf("gh pr merge 123")).toBe("prompt");
+		expect(decisionOf("gh pr create --fill")).toBe("prompt");
+		expect(decisionOf("gh release create v1.0.0")).toBe("prompt");
+		// The old crude handling matched the whole `auth` resource as read; a mutating
+		// auth action must no longer slip through.
+		expect(decisionOf("gh auth login")).toBe("prompt");
+		expect(classifyBashReadOnly("gh pr merge 123")).toBe(false);
+		expect(classifyBashReadOnly("gh auth login")).toBe(false);
+	});
 });
 
 describe("seeded rules (runtime amend parity)", () => {
