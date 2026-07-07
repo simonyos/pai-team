@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { checkBashPermission, classifyBashReadOnly } from "../src/core/execpolicy/command-safety.ts";
+import {
+	checkBashPermission,
+	classifyBashGitOrGhMutation,
+	classifyBashReadOnly,
+} from "../src/core/execpolicy/command-safety.ts";
 import { mostRestrictive, mostRestrictiveOf } from "../src/core/execpolicy/decision.ts";
 import { ExecPolicy } from "../src/core/execpolicy/policy.ts";
 import { exactPrefixRule, matchPrefix, single } from "../src/core/execpolicy/rule.ts";
@@ -342,6 +346,50 @@ describe("code-review hardening (S2 review findings)", () => {
 		const parsed = parseCommandLine("ls \\\n -la");
 		expect(parsed.segments).toHaveLength(1);
 		expect(parsed.segments[0].argv).toEqual(["ls", "-la"]);
+	});
+});
+
+describe("classifyBashGitOrGhMutation (headless mutation gate scope)", () => {
+	it("flags mutating git invocations", () => {
+		expect(classifyBashGitOrGhMutation("git push")).toBe(true);
+		expect(classifyBashGitOrGhMutation("git push origin main")).toBe(true);
+		expect(classifyBashGitOrGhMutation("git commit -m wip")).toBe(true);
+		expect(classifyBashGitOrGhMutation("git reset --hard HEAD~1")).toBe(true);
+		expect(classifyBashGitOrGhMutation("git branch -D feature")).toBe(true);
+	});
+
+	it("flags mutating gh invocations", () => {
+		expect(classifyBashGitOrGhMutation("gh pr merge 123")).toBe(true);
+		expect(classifyBashGitOrGhMutation("gh pr create --fill")).toBe(true);
+		expect(classifyBashGitOrGhMutation("gh release create v1.0.0")).toBe(true);
+	});
+
+	it("does not flag read-only git/gh invocations", () => {
+		expect(classifyBashGitOrGhMutation("git status")).toBe(false);
+		expect(classifyBashGitOrGhMutation("git log --oneline")).toBe(false);
+		expect(classifyBashGitOrGhMutation("git diff")).toBe(false);
+		expect(classifyBashGitOrGhMutation("git config --get user.name")).toBe(false);
+		expect(classifyBashGitOrGhMutation("gh auth status")).toBe(false);
+		expect(classifyBashGitOrGhMutation("gh browse")).toBe(false);
+	});
+
+	it("does not flag non-git/gh commands, even mutating ones", () => {
+		expect(classifyBashGitOrGhMutation("rm -rf build")).toBe(false);
+		expect(classifyBashGitOrGhMutation("npm publish")).toBe(false);
+		expect(classifyBashGitOrGhMutation("echo hi > out.txt")).toBe(false);
+		expect(classifyBashGitOrGhMutation("ls -la")).toBe(false);
+	});
+
+	it("sees through privilege/wrapper prefixes and inline shells", () => {
+		expect(classifyBashGitOrGhMutation("sudo git push")).toBe(true);
+		expect(classifyBashGitOrGhMutation("env git push")).toBe(true);
+		expect(classifyBashGitOrGhMutation("sh -c 'git push origin main'")).toBe(true);
+		// wrapper around a read-only git stays read-only
+		expect(classifyBashGitOrGhMutation("env git status")).toBe(false);
+	});
+
+	it("treats a compound command mixing git with another mutation as mutating", () => {
+		expect(classifyBashGitOrGhMutation("git status && rm -rf build")).toBe(true);
 	});
 });
 

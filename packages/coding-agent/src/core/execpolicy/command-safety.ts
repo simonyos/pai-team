@@ -27,6 +27,24 @@ export function classifyBashReadOnly(command: string, policy: ExecPolicy = defau
 	return policy.isReadOnly(command);
 }
 
+/** Programs whose mutating invocations the headless mutation gate default-denies. */
+const GIT_GH_PROGRAMS: ReadonlySet<string> = new Set(["git", "gh"]);
+
+/**
+ * Is this bash command a MUTATING git or gh invocation? True when the command names
+ * git or gh as a program in any segment AND is not classified read-only. Drives the
+ * headless mutation gate (G0b): when no interactive approval is possible, a
+ * state-changing git/gh command (e.g. `git push`, `gh pr merge`) with no explicit
+ * allow rule is denied rather than silently allowed. Reuses `classifyBashReadOnly`
+ * as the single source of truth for "mutating" — no second verb list. Coarse by
+ * design: a compound command mixing git/gh with another mutation
+ * (`git status && rm foo`) is also treated as mutating, which only tightens the gate.
+ */
+export function classifyBashGitOrGhMutation(command: string, policy: ExecPolicy = defaultExecPolicy): boolean {
+	if (!policy.invokesAnyProgram(command, GIT_GH_PROGRAMS)) return false;
+	return !policy.isReadOnly(command);
+}
+
 /** Decide whether a bash command may run, asking or blocking per the command-safety policy. */
 export function checkBashPermission(command: string, policy: ExecPolicy = defaultExecPolicy): PermissionResult {
 	const evaluation = policy.check(command);

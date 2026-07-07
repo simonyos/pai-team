@@ -517,6 +517,30 @@ export class ExecPolicy {
 		}
 		return true;
 	}
+
+	/**
+	 * Does any segment of this command line invoke one of `programs` at the program
+	 * position, after unwrapping privilege/wrapper prefixes (`sudo git …`, `env git …`)
+	 * and inline `sh -c "git …"` strings? Used by the headless mutation gate to scope
+	 * its default-deny to git/gh; the mutating/read-only judgment stays with
+	 * `isReadOnly` so there is no second verb list.
+	 */
+	invokesAnyProgram(command: string, programs: ReadonlySet<string>, depth = 0): boolean {
+		const parsed = parseCommandLine(command);
+		for (const seg of parsed.segments) {
+			const { inner } = unwrap(seg.argv);
+			if (inner.length > 0 && programs.has(inner[0])) return true;
+			const inline = extractShellInlineCommand(inner);
+			if (
+				inline !== undefined &&
+				depth < SHELL_RECURSION_LIMIT &&
+				this.invokesAnyProgram(inline, programs, depth + 1)
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 function writesAnyFile(redirects: readonly RedirectInfo[]): boolean {
