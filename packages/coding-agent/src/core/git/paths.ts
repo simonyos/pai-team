@@ -54,6 +54,48 @@ export function findGitPaths(cwd: string): GitPaths | null {
 	}
 }
 
+/**
+ * Root working-tree directory of the MAIN repository for `cwd`.
+ *
+ * For a plain repo this equals the repo root. For a linked worktree (`.git` is a
+ * file pointing at `<main>/.git/worktrees/<name>`), `findGitPaths` resolves the
+ * shared `commonGitDir` (`<main>/.git`) — so the main repo's working-tree root is
+ * its parent. This repo's own `.paperclip/worktrees/...` trees are exactly this
+ * shape. `git worktree list --porcelain` (read-only; its first `worktree <path>`
+ * line is authoritatively the main working tree) is the fallback for non-standard
+ * layouts where the git dir lives outside the repo (e.g. `--separate-git-dir`),
+ * where `dirname(commonGitDir)` is not the working tree.
+ *
+ * Returns null when `cwd` is not inside a git repository.
+ */
+export function getMainRepoRoot(cwd: string): string | null {
+	const paths = findGitPaths(cwd);
+	if (!paths) return null;
+	const candidate = dirname(paths.commonGitDir);
+	// Standard layout: the main working tree contains the `.git` entry (a directory
+	// for a plain repo, a file for the primary tree of a worktree set). When it does
+	// not, the git dir is detached from the working tree — ask git directly.
+	if (existsSync(join(candidate, ".git"))) return candidate;
+	return mainWorktreeFromGit(cwd) ?? candidate;
+}
+
+/** First `worktree <path>` line from `git worktree list --porcelain` — the main working tree — or null. */
+function mainWorktreeFromGit(cwd: string): string | null {
+	const result = spawnSync("git", ["--no-optional-locks", "worktree", "list", "--porcelain"], {
+		cwd,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
+	if (result.status !== 0) return null;
+	for (const line of result.stdout.split("\n")) {
+		if (line.startsWith("worktree ")) {
+			const path = line.slice("worktree ".length).trim();
+			if (path) return path;
+		}
+	}
+	return null;
+}
+
 /** Ask git for the current branch. Returns null on detached HEAD or if git is unavailable. */
 export function resolveBranchWithGitSync(repoDir: string): string | null {
 	const result = spawnSync("git", ["--no-optional-locks", "symbolic-ref", "--quiet", "--short", "HEAD"], {

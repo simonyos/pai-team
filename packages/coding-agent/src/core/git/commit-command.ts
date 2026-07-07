@@ -29,6 +29,17 @@ const ALLOW_SECRETS_FLAG = "--allow-secrets";
 export type CommitCommandResult = { kind: "refuse"; message: string } | { kind: "prompt"; text: string };
 
 /**
+ * Outcome of the shared commit preconditions check (transient state, not-a-repo,
+ * conflicts, nothing-to-commit, likely-secret), plus — when committing is viable —
+ * the real current status and a ready-to-embed diff section describing what should
+ * be committed. Extracted so `/commit-push-pr` (G5) can reuse the exact same refuse
+ * logic and diff selection without duplicating it (see commit-push-pr-command.ts).
+ */
+export type CommitPreconditions =
+	| { kind: "refuse"; message: string }
+	| { kind: "ready"; status: GitStatus; diffSection: string };
+
+/**
  * The same markers `isTransientState` (git-helpers.ts) checks, paired with a
  * human-readable description so a refusal can tell the user what it detected.
  * Kept in sync manually (small, stable list) rather than widening
@@ -56,7 +67,7 @@ function describeTransientState(cwd: string): string | null {
 }
 
 /** Human-readable summary of the current status for the primed prompt. */
-function formatStatusSummary(status: GitStatus): string {
+export function formatStatusSummary(status: GitStatus): string {
 	const lines: string[] = [`Current branch (per status): ${status.branch ?? "(detached HEAD)"}`];
 	lines.push(`Staged: ${status.staged.length === 0 ? "(none)" : status.staged.map((e) => e.path).join(", ")}`);
 	lines.push(`Unstaged: ${status.unstaged.length === 0 ? "(none)" : status.unstaged.map((e) => e.path).join(", ")}`);
@@ -90,7 +101,7 @@ function formatStatusSummary(status: GitStatus): string {
  * status and real diff (staged if present, else the unstaged diff with an
  * instruction to stage first) for the model to act on.
  */
-export async function buildCommitCommand(cwd: string, args: string): Promise<CommitCommandResult> {
+export async function evaluateCommitPreconditions(cwd: string, args: string): Promise<CommitPreconditions> {
 	const transientDescription = describeTransientState(cwd);
 	if (transientDescription) {
 		return {
@@ -121,7 +132,6 @@ export async function buildCommitCommand(cwd: string, args: string): Promise<Com
 	const allowSecrets = args.trim().split(/\s+/).includes(ALLOW_SECRETS_FLAG);
 	const hasStaged = status.staged.length > 0;
 
-	let stagedDiff = "";
 	if (hasStaged) {
 		// Read the REAL currently-staged diff (never trust a model/prompt claim about what
 		// is staged) — raw (unredacted) so the secret scan sees actual values, then discard
@@ -134,21 +144,11 @@ export async function buildCommitCommand(cwd: string, args: string): Promise<Com
 					"Refusing to commit: the staged changes look like they contain a secret (an API key, credential, or similar). Review what's staged and remove it, or re-run `/commit --allow-secrets` if this is a false positive.",
 			};
 		}
-		stagedDiff = await getDiff(cwd, { staged: true });
+		const stagedDiff = await getDiff(cwd, { staged: true });
+		return { kind: "ready", status, diffSection: `Staged diff:\n${stagedDiff}` };
 	}
 
-	const branch = await getCurrentBranch(cwd);
-	const statusSummary = formatStatusSummary(status);
-
-	const sections = [
-		buildGitSafetySection(),
-		`Current branch: ${branch ?? "(detached HEAD)"}`,
-		`Current status:\n${statusSummary}`,
-	];
-
-	if (hasStaged) {
-		sections.push(`Staged diff:\n${stagedDiff}`);
-	} else if (status.unstaged.length > 0) {
+	if (status.unstaged.length > 0) {
 		// Same raw-then-discard pattern as the staged case: scan the real unstaged diff for
 		// secrets before it is shown to the model, since this is the diff /commit is about
 		// to hand off (nothing is staged, so this is what the model will be told to stage).
@@ -161,20 +161,38 @@ export async function buildCommitCommand(cwd: string, args: string): Promise<Com
 			};
 		}
 		const unstagedDiff = await getDiff(cwd);
-		sections.push(
-			`Nothing is staged yet, but there are unstaged changes. Stage the files relevant to this commit first (e.g. \`git add <files>\`), then commit.\n\nUnstaged diff:\n${unstagedDiff}`,
-		);
-	} else {
-		// Only untracked file(s) — `git diff` shows nothing for these, so there is no diff to
-		// scan or display; the file list is already in the status summary above.
-		sections.push(
-			"Nothing is staged yet, but there are untracked file(s) that may be relevant (see Untracked above). Review them and `git add` the ones relevant to this commit, then commit.",
-		);
+		return {
+			kind: "ready",
+			status,
+			diffSection: `Nothing is staged yet, but there are unstaged changes. Stage the files relevant to this commit first (e.g. \`git add <files>\`), then commit.\n\nUnstaged diff:\n${unstagedDiff}`,
+		};
 	}
 
-	sections.push(
+	// Only untracked file(s) — `git diff` shows nothing for these, so there is no diff to
+	// scan or display; the file list is already in the status summary above.
+	return {
+		kind: "ready",
+		status,
+		diffSection:
+			"Nothing is staged yet, but there are untracked file(s) that may be relevant (see Untracked above). Review them and `git add` the ones relevant to this commit, then commit.",
+	};
+}
+
+export async function buildCommitCommand(cwd: string, args: string): Promise<CommitCommandResult> {
+	const preconditions = await evaluateCommitPreconditions(cwd, args);
+	if (preconditions.kind === "refuse") {
+		return preconditions;
+	}
+
+	const branch = await getCurrentBranch(cwd);
+
+	const sections = [
+		buildGitSafetySection(),
+		`Current branch: ${branch ?? "(detached HEAD)"}`,
+		`Current status:\n${formatStatusSummary(preconditions.status)}`,
+		preconditions.diffSection,
 		"The user has asked to commit. Write a clear, descriptive commit message for this change, then create the commit using your normal tool access (bash or the git tool), following the safety protocol above.",
-	);
+	];
 
 	return { kind: "prompt", text: sections.join("\n\n") };
 }

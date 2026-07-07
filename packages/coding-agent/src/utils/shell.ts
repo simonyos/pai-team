@@ -129,7 +129,12 @@ export function getShellEnv(): NodeJS.ProcessEnv {
 	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
 
 	// Withhold the agent's model-provider credentials from child processes (1.6).
+	// Force the GitHub CLI non-interactive for every model-driven command (Wave 2.2 G5):
+	// the model's spawned `gh` calls have no TTY, so an interactive prompt (e.g. from a
+	// `gh pr create` missing --title/--body) would hang the turn rather than fail cleanly.
+	// A user-set value wins — this only supplies the safe headless default when unset.
 	return scrubChildEnv({
+		GH_PROMPT_DISABLED: "1",
 		...process.env,
 		[pathKey]: updatedPath,
 	});
