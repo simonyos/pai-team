@@ -58,11 +58,11 @@ The gaps cluster into four areas, and **all three sources converge on the same p
 - **1.5 Plan mode + behavioral policy prompt sections** (risk/blast-radius, git safety "never revert the user's changes", anti-gold-plating, faithful reporting). Plan mode enforced by the resolver gating non-read-only tools, not a blocklist. *Borrow:* both. **Effort M, Impact high.**
 - **1.6 Secret redaction + process hardening** at startup (scrub env for children; redact token shapes in output). *Borrow:* Codex `process-hardening/`, `secrets/`. **Effort S, Impact medium.**
 
-### Wave 2 — Ecosystem (P1)
+### Wave 2 — Ecosystem (P1) — ✅ COMPLETE 2026-07-07 (except deferred `web_search`)
 - **2.1 MCP client.** Official `@modelcontextprotocol/sdk` over stdio/http; discovered tools become `AgentTool`s namespaced `mcp__<server>__<tool>`; `mcpServers` config; per-tool approval via the Wave-1 resolver. Optional ToolSearch-style schema deferral to keep the tool list small. *Borrow:* Claude Code `services/mcp/*` + `ToolSearchTool/`. **Effort L, Impact high.**
 - **2.2 Git helpers + Git tool + workflow slash-commands** (`/commit`, `/commit-push-pr`, `/branch`) with scoped tool policy and attribution. *Borrow:* Claude Code `utils/git.ts`, `commands/commit-push-pr.ts` (pi's `footer-data-provider.ts` already walks `.git`). **Effort M each, Impact high.**
-- **2.3 `web_fetch` (+ optional `web_search`) tool** with content extraction + shared truncation. *Borrow:* Claude Code. **Effort M, Impact high.**
-- **2.4 Declarative agent definitions** `.pi/agents/*.md` (frontmatter: name/description/tools/model), reusing the existing `skills.ts` frontmatter parser. *Borrow:* both. **Effort M, Impact medium.**
+- **2.3 `web_fetch` tool** ✅ SHIPPED (PR #18) — fetch URL, HTML→text extraction (zero new deps), shared `truncateHead`, full SSRF defense (literal/DNS-resolves-to-private/redirect-revalidation; not auto-allowed → un-ruled call prompts). `web_search` **DEFERRED** — no free path through the model provider; needs an owner-chosen third-party search API + key + cost. Fast follow when a provider is picked.
+- **2.4 Declarative agent definitions** ✅ SHIPPED (PR #19) — `.pi/agents/*.md` loaded/validated/deduped into a `ResourceLoader.getAgentDefinitions()` registry (parse+validate+registry only; the sub-agent spawn consumer is Wave 3.1). *Borrow:* both. **Effort M, Impact medium.**
 
 ### Wave 3 — Agentic power (P1)
 - **3.1 `task` sub-agent tool** over the orchestrator (`{prompt,label?,model?,cwd?}`) + `run_in_background` + `get_task_status`/`get_task_output` RPC + parent/child graph (`parentInstanceId`) + optional git-worktree isolation. *Borrow:* Claude Code `forkSubagent`/Task + auto-background-120s + SendMessage-resume; Codex `agent-graph-store`. **Effort M–L, Impact high.**
