@@ -130,6 +130,7 @@ export interface Settings {
 	warnings?: WarningSettings;
 	sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
+	searxngUrl?: string; // SearXNG endpoint for the web_search tool (default http://localhost:8888)
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
 	mcpServers?: McpServers; // MCP servers to connect; each exposes tools as mcp__<server>__<tool> (Wave 2.1)
@@ -1219,6 +1220,10 @@ export class SettingsManager {
 
 	getShowHardwareCursor(): boolean {
 		return this.settings.showHardwareCursor ?? process.env.PI_HARDWARE_CURSOR === "1";
+	}
+
+	getSearxngUrl(): string {
+		return this.settings.searxngUrl ?? process.env.PI_SEARXNG_URL ?? "http://localhost:8888";
 	}
 
 	setShowHardwareCursor(enabled: boolean): void {
