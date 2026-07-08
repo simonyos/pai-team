@@ -2553,6 +2553,7 @@ export class AgentSession {
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
+					web_search: { endpoint: this.settingsManager.getSearxngUrl() },
 					bash: {
 						commandPrefix: shellCommandPrefix,
 						shellPath,
