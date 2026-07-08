@@ -69,6 +69,16 @@ describe("web_search URL construction", () => {
 		expect(calledUrl.searchParams.get("q")).toBe("hello");
 	});
 
+	it("preserves a base path on a subpath-hosted endpoint (reverse proxy)", async () => {
+		const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => jsonResponse({ results: [] }));
+		await run("hello", { fetchImpl, toolOptions: { endpoint: "http://host/searxng" } });
+		const calledUrl = new URL(fetchImpl.mock.calls[0][0] as string);
+		expect(calledUrl.host).toBe("host");
+		// The "/searxng" prefix must survive — not be dropped by an absolute "/search".
+		expect(calledUrl.pathname).toBe("/searxng/search");
+		expect(calledUrl.searchParams.get("q")).toBe("hello");
+	});
+
 	it("sends an application/json Accept header", async () => {
 		const fetchImpl = vi.fn(async (_url: string, _init: RequestInit) => jsonResponse({ results: [] }));
 		await run("hello", { fetchImpl });
@@ -127,6 +137,16 @@ describe("web_search result formatting", () => {
 		const text = textOf(result);
 		expect(text).toContain("1. (untitled)");
 		expect(text).toContain("https://example.com/x");
+	});
+
+	it("does not throw on a non-object entry in the results array", async () => {
+		const result = await run("weird", {
+			// A stray null / non-object entry must render as "(untitled)", not crash with a TypeError.
+			fetchImpl: async () => jsonResponse({ results: [null, { title: "Real", url: "https://e.com" }] }),
+		});
+		const text = textOf(result);
+		expect(text).toContain("1. (untitled)");
+		expect(text).toContain("2. Real");
 	});
 
 	it("returns an explicit no-results message for an empty results array", async () => {

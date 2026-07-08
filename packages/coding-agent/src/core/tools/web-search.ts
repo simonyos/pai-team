@@ -68,9 +68,12 @@ function singleLine(value: string): string {
 
 /** Format one SearXNG result as a compact numbered block: title / url / snippet. */
 function formatResult(result: SearxResult, index: number): string {
-	const title = typeof result.title === "string" && result.title.trim() ? singleLine(result.title) : "(untitled)";
-	const url = typeof result.url === "string" ? result.url.trim() : "";
-	const content = typeof result.content === "string" ? singleLine(result.content) : "";
+	// Guard against a non-object entry (e.g. a stray null in the results array) so a
+	// malformed response yields an "(untitled)" line rather than an opaque TypeError.
+	const r: SearxResult = result && typeof result === "object" ? result : {};
+	const title = typeof r.title === "string" && r.title.trim() ? singleLine(r.title) : "(untitled)";
+	const url = typeof r.url === "string" ? r.url.trim() : "";
+	const content = typeof r.content === "string" ? singleLine(r.content) : "";
 	const lines = [`${index + 1}. ${title}`];
 	if (url) lines.push(`   ${url}`);
 	if (content) lines.push(`   ${content}`);
@@ -98,9 +101,13 @@ export function createWebSearchToolDefinition(
 		async execute(_toolCallId, { query }: WebSearchToolInput, signal?: AbortSignal, _onUpdate?, _ctx?) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
-			// The host/port are fixed by operator config; the model-supplied query is strictly
-			// URL-encoded into `q` and can never change the host it lands on.
-			const u = new URL("/search", endpoint);
+			// The host/port (and any base path) are fixed by operator config; the model-supplied
+			// query is strictly URL-encoded into `q` and can never change the host it lands on.
+			// Resolve "search" relative to a trailing-slashed base so a subpath-hosted endpoint
+			// (e.g. behind a reverse proxy at http://host/searxng) keeps its prefix instead of
+			// being dropped by an absolute "/search".
+			const base = endpoint.endsWith("/") ? endpoint : `${endpoint}/`;
+			const u = new URL("search", base);
 			u.searchParams.set("q", query);
 			u.searchParams.set("format", "json");
 
